@@ -7,8 +7,10 @@ import logging
 import re
 import os
 import getpass
+import server_cert
 from aio_tcpserver import tcp_server
 from default_crypto import Asymmetric, Symmetric
+
 
 logger = logging.getLogger('root')
 
@@ -53,12 +55,16 @@ class ClientHandler(asyncio.Protocol):
         :param transport: The transport stream to use with this client
         :return:
         """
+
+        server_cert.main()
+
         self.peername = transport.get_extra_info('peername')
         logger.info('\n\nConnection from {}'.format(self.peername))
 
         logger.info("New client connected, introduce password to generate rsa key")
         password = getpass.getpass('Password:')
 
+        # remove this
         if not os.path.exists("server-keys"):
             try:
                 os.mkdir("server-keys")
