@@ -56,6 +56,8 @@ class ClientProtocol(asyncio.Protocol):
         self.server_pub = None
         self.password = None
 
+    def authentication(self):
+        logger.info("Starting authentication process ... ")
     def handshake(self):
 
         logger.info("Introduce password to generate rsa key: ")
@@ -106,19 +108,22 @@ class ClientProtocol(asyncio.Protocol):
 
         logger.debug('Connected to Server')
 
-        citizen_name = self.veritfy_card_connection()
+        self.veritfy_card_connection()
 
         # GET CC pubkey
-        publickeycc = self.citizen_card.get_public_key()
-        print(self.citizen_card.serialize(publickeycc))
+        #publickeycc = self.citizen_card.get_public_key()
+        #print(self.citizen_card.serialize(publickeycc))
 
         # GET CC privkey
-        print(self.citizen_card.get_private_key())
+        # print(self.citizen_card.get_private_key())
 
+        #signed = self.citizen_card.sign_with_cc("Stupid Content")
+        #print(signed)
 
+        self.authentication()
         self.symmetric_cypher, self.cypher_mode, self.synthesis_algorithm = self.handshake()
 
-        print(self._public_key)
+        #print(self._public_key)
         message = {'type': 'OPEN',
                    'file_name': self.file_name,
                    'symmetric_cypher': self.symmetric_cypher,
@@ -144,7 +149,7 @@ class ClientProtocol(asyncio.Protocol):
         logger.debug('Received: {}'.format(data))
         if self.state == STATE_OPEN:
             data = self.symmetric.handshake_decrypt(data)
-            # logger.debug('DEBUG: Decrypt: ', data)
+            logger.debug('decrypted: {}'.format(data))
         try:
             self.buffer += data.decode()
         except:
@@ -193,14 +198,19 @@ class ClientProtocol(asyncio.Protocol):
             else:
                 logger.warning("Ignoring message from server")
             return
-
+        elif mtype == 'AUTHENTICATION_CHALLENGE':
+            if self.state == STATE_OPEN:
+                logger.info("Authentication process, signing challenge from server")
+                challenge_response = self.citizen_card.sign_with_cc(message["challenge"])
+                print(challenge_response)
+                self._send({'type': 'AUTHENTICATION_RESPONSE', 'response': challenge_response.encode()})
         elif mtype == 'ERROR':
             logger.warning("Got error from server: {}".format(message.get('data', None)))
         else:
             logger.warning("Invalid message type")
 
-        self.transport.close()
-        self.loop.stop()
+        #self.transport.close()
+        #self.loop.stop()
 
     def connection_lost(self, exc):
         """

@@ -2,6 +2,8 @@ import asyncio
 import json
 import base64
 import argparse
+import secrets
+
 import coloredlogs
 import logging
 import re
@@ -46,6 +48,8 @@ class ClientHandler(asyncio.Protocol):
         self.server_pub = None
         self.server_priv = None
 
+        self.one_time_nonce = None
+
     def connection_made(self, transport) -> None:
         """
         Called when a client connects
@@ -71,8 +75,17 @@ class ClientHandler(asyncio.Protocol):
             self.server_priv, self.server_pub = self.asymmetric_encrypt.generate_rsa_keys(crypto_dir,
                                                                                           str(self.peername[1]),
                                                                                           password)
+
         self.transport = transport
+
+        # Asks for client authentication with CC challenge/Response
+        self.authenticate_client()
+
         self.state = STATE_CONNECT
+
+    def authenticate_client(self):
+        self.generate_nonce()
+        self._send({'type': 'AUTHENTICATION_CHALLENGE', 'challenge': self.one_time_nonce})
 
     def data_received(self, data: bytes) -> None:
         """
@@ -82,7 +95,7 @@ class ClientHandler(asyncio.Protocol):
         :param data: The data that was received. This may not be a complete JSON message
         :return:
         """
-        # logger.debug('Received: {}'.format(data))
+        logger.debug('Received: {}'.format(data))
         if self.state == STATE_CONNECT:
             data = self.symmetric.handshake_decrypt(data)
         else:
@@ -130,6 +143,8 @@ class ClientHandler(asyncio.Protocol):
             ret = self.process_open(message)
         elif mtype == 'DATA':
             ret = self.process_data(message)
+        elif mtype == 'AUTHENTICATION_RESPONSE':
+            print(message)
         elif mtype == 'CLOSE':
             ret = self.process_close(message)
         else:
@@ -276,6 +291,9 @@ class ClientHandler(asyncio.Protocol):
         if self.state == STATE_CONNECT:
             message_b = self.symmetric.handshake_encrypt(message_b)
         self.transport.write(message_b)
+
+    def generate_nonce(self):
+        self.one_time_nonce = secrets.token_urlsafe(32)
 
 
 def main():

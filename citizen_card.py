@@ -83,3 +83,6 @@ class CitizenCard:
                 'format'] if 'format' in kwargs else serialization.PrivateFormat.TraditionalOpenSSL,
                                      encryption_algorithm=kwargs[
                                          'encryption_algorithm'] if 'encryption_algorithm' in kwargs else serialization.NoEncryption())
+
+    def sign_with_cc(self, content, mechanism=PyKCS11.CKM_SHA1_RSA_PKCS, param=None):
+        return self.session.sign(self.get_private_key(), content, PyKCS11.Mechanism(mechanism, param))
