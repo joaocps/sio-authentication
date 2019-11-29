@@ -42,6 +42,7 @@ class CitizenCard:
             elif key in dir(NameOID):
                 certificates = [certificate for certificate in certificates if
                                 value(certificate.subject.get_attributes_for_oid(getattr(NameOID, key)))]
+        print(certificates)
         return certificates
 
     def get_certificates(self):
@@ -53,3 +54,32 @@ class CitizenCard:
             if attributes['CKA_CERTIFICATE_TYPE'] != None:
                 certificates.append(bytes(attributes['CKA_VALUE']))
         return certificates
+
+    def get_public_key(self,
+                       transformation=lambda key: serialization.load_der_public_key(bytes(key.to_dict()['CKA_VALUE']), default_backend())):
+        print(str(transformation(self.session.findObjects([
+            (PyKCS11.CKA_CLASS, PyKCS11.CKO_PUBLIC_KEY),
+            (PyKCS11.CKA_LABEL, 'CITIZEN AUTHENTICATION KEY')
+        ])[0])))
+        return transformation(self.session.findObjects([
+            (PyKCS11.CKA_CLASS, PyKCS11.CKO_PUBLIC_KEY),
+            (PyKCS11.CKA_LABEL, 'CITIZEN AUTHENTICATION KEY')
+        ])[0])
+
+    def get_private_key(self):
+        return self.session.findObjects([
+            (PyKCS11.CKA_CLASS, PyKCS11.CKO_PRIVATE_KEY),
+            (PyKCS11.CKA_LABEL, 'CITIZEN AUTHENTICATION KEY')
+        ])[0]
+
+    def serialize(self,key, encoding=serialization.Encoding.PEM, **kwargs):
+        if type(key) == _Certificate:
+            return key.public_bytes(encoding=encoding)
+        elif type(key) == _RSAPublicKey:
+            return key.public_bytes(encoding=encoding, format=kwargs[
+                'format'] if 'format' in kwargs else serialization.PublicFormat.SubjectPublicKeyInfo)
+        else:
+            return key.private_bytes(encoding=encoding, format=kwargs[
+                'format'] if 'format' in kwargs else serialization.PrivateFormat.TraditionalOpenSSL,
+                                     encryption_algorithm=kwargs[
+                                         'encryption_algorithm'] if 'encryption_algorithm' in kwargs else serialization.NoEncryption())

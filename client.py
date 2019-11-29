@@ -40,7 +40,12 @@ class ClientProtocol(asyncio.Protocol):
         self.buffer = ''  # Buffer to receive data chunks
         self.asymmetric_encrypt = Asymmetric()
         self.symmetric = Symmetric()
-        self.citizen_card = CitizenCard()
+
+        try:
+            self.citizen_card = CitizenCard()
+        except:
+            logger.error("Citizen card reader probably not connected! Exiting ...")
+            exit(1)
 
         self.symmetric_cypher = None
         self.cypher_mode = None
@@ -102,6 +107,14 @@ class ClientProtocol(asyncio.Protocol):
         logger.debug('Connected to Server')
 
         citizen_name = self.veritfy_card_connection()
+
+        # GET CC pubkey
+        publickeycc = self.citizen_card.get_public_key()
+        print(self.citizen_card.serialize(publickeycc))
+
+        # GET CC privkey
+        print(self.citizen_card.get_private_key())
+
 
         self.symmetric_cypher, self.cypher_mode, self.synthesis_algorithm = self.handshake()
 
