@@ -63,6 +63,7 @@ class ClientProtocol(asyncio.Protocol):
         logger.info("Introduce password to generate rsa key: ")
         self.password = getpass.getpass('Password:')
 
+        # remove this
         if not os.path.exists("client-keys"):
             try:
                 os.mkdir("client-keys")
