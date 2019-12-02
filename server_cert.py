@@ -9,6 +9,9 @@ from cryptography.exceptions import InvalidSignature
 
 import datetime
 import os
+import logging
+
+logger = logging.getLogger('root')
 
 
 class ServerCert:
@@ -19,20 +22,19 @@ class ServerCert:
     """
     Generate RSA key pair for certificate
     """
-    def key_gen(self, password=""):
+    def key_gen(self, password):
         self.private_key = rsa.generate_private_key(
             public_exponent=65537,
             key_size=2048,
             backend=default_backend()
         )
         if not os.path.exists("server_keys"):
-            os.mkdir("server_keys")
-            with open("server_keys/certKey.pem", "wb") as f:
+            os.mkdir("server-keys")
+            with open("server-keys/certKey.pem", "wb") as f:
                 f.write(self.private_key.private_bytes(
                     encoding=serialization.Encoding.PEM,
                     format=serialization.PrivateFormat.TraditionalOpenSSL,
-                    # change pass
-                    encryption_algorithm=serialization.BestAvailableEncryption(b"passphrase"),
+                    encryption_algorithm=serialization.BestAvailableEncryption(password.encode()),
                 ))
     """
     Generate server self signed certificate 
@@ -91,20 +93,19 @@ def main(password=""):
     """
     s = ServerCert()
     if not os.path.exists("certs/server.pem"):
-        print("Generate cert")
-        s.key_gen()
+        logger.info("No certificate found, Generating")
+        s.key_gen(password)
         s.cert_gen()
     else:
         with open("certs/server.pem", "rb") as f:
             cert = f.read()
             if s.is_valid(load_pem_x509_certificate(cert, default_backend())):
-                print("Ready to Use")
+                logger.info("Certificate still valid")
             else:
-                print("Cert expired generating a new one")
-                s.key_gen()
+                logger.error("Certificate expired generating a new one")
+                s.key_gen(password)
                 s.cert_gen()
 
-
-# for testing
-if __name__ == '__main__':
-    main()
+# to test module
+# if __name__ == '__main__':
+#     main()
