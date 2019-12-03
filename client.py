@@ -7,6 +7,10 @@ import coloredlogs
 import logging
 import os
 import time
+
+from cryptography import x509
+from cryptography.hazmat.backends import default_backend
+
 from default_crypto import Asymmetric, Symmetric
 from citizen_card import CitizenCard
 
@@ -58,12 +62,12 @@ class ClientProtocol(asyncio.Protocol):
 
     def authentication(self):
         logger.info("Starting authentication process ... ")
+
     def handshake(self):
 
         logger.info("Introduce password to generate rsa key: ")
         self.password = getpass.getpass('Password:')
 
-        # remove this
         if not os.path.exists("client-keys"):
             try:
                 os.mkdir("client-keys")
@@ -105,37 +109,37 @@ class ClientProtocol(asyncio.Protocol):
         :param transport: The transport stream to use for this client
         :return: No return
         """
+        self.veritfy_card_connection()
+
         self.transport = transport
 
         logger.debug('Connected to Server')
 
-        self.veritfy_card_connection()
-
         # GET CC pubkey
-        #publickeycc = self.citizen_card.get_public_key()
-        #print(self.citizen_card.serialize(publickeycc))
+        # publickeycc = self.citizen_card.get_public_key()
+        # print(self.citizen_card.serialize(publickeycc))
 
         # GET CC privkey
         # print(self.citizen_card.get_private_key())
 
-        #signed = self.citizen_card.sign_with_cc("Stupid Content")
-        #print(signed)
+        # signed = self.citizen_card.sign_with_cc("Stupid Content")
+        # print(signed)
 
-        self.authentication()
+        # self.authentication()
         self.symmetric_cypher, self.cypher_mode, self.synthesis_algorithm = self.handshake()
 
-        #print(self._public_key)
-        message = {'type': 'OPEN',
-                   'file_name': self.file_name,
-                   'symmetric_cypher': self.symmetric_cypher,
-                   'cypher_mode': self.cypher_mode,
-                   'synthesis_algorithm': self.synthesis_algorithm,
-                   # É SUPOSTO ENVIAR ASSIM (str) A PUB KEY?
-                   'client_public_key': self._public_key.decode()
-                   }
-        self._send(message)
+        # print(self._public_key)
+        # message = {'type': 'OPEN',
+        #            'file_name': self.file_name,
+        #            'symmetric_cypher': self.symmetric_cypher,
+        #            'cypher_mode': self.cypher_mode,
+        #            'synthesis_algorithm': self.synthesis_algorithm,
+        #            # É SUPOSTO ENVIAR ASSIM (str) A PUB KEY?
+        #            'client_public_key': self._public_key.decode()
+        #            }
+        # self._send(message)
 
-        logger.info(message)
+        # logger.info(message)
 
         self.state = STATE_OPEN
 
@@ -199,19 +203,28 @@ class ClientProtocol(asyncio.Protocol):
             else:
                 logger.warning("Ignoring message from server")
             return
-        elif mtype == 'AUTHENTICATION_CHALLENGE':
+        elif mtype == 'AUTHENTICATION_CHALLENGE':  # Server replied with a challenge to authenticate clients
             if self.state == STATE_OPEN:
                 logger.info("Authentication process, signing challenge from server")
                 challenge_response = self.citizen_card.sign_with_cc(message["challenge"])
-                print(challenge_response)
-                self._send({'type': 'AUTHENTICATION_RESPONSE', 'response': challenge_response.encode()})
+
+                # Only need the digital signature certificate from cc
+                certificate = self.citizen_card.get_x509_certificates(KEY_USAGE=lambda x: x.value.digital_signature)
+                # Convert certificate to bytes
+                bytes_cert = self.citizen_card.serialize(certificate[0])
+                print(bytes_cert)
+                print(x509.load_pem_x509_certificate(bytes_cert, default_backend()).public_key())
+
+                self._send({'type': 'AUTHENTICATION_RESPONSE',
+                            'response': base64.b64encode(bytes(challenge_response)).decode(),
+                            'certificate': base64.b64encode(bytes_cert).decode()})
         elif mtype == 'ERROR':
             logger.warning("Got error from server: {}".format(message.get('data', None)))
         else:
             logger.warning("Invalid message type")
 
-        #self.transport.close()
-        #self.loop.stop()
+        # self.transport.close()
+        # self.loop.stop()
 
     def connection_lost(self, exc):
         """
@@ -258,8 +271,11 @@ class ClientProtocol(asyncio.Protocol):
         """
 
         message_b = (json.dumps(message) + '\r\n').encode()
-        if self.state == STATE_CONNECT:
+        if self.state == STATE_CONNECT or self.state == STATE_OPEN:
             message_b = self.symmetric.handshake_encrypt(message_b)
+        # TRY 2dez
+        #elif self.state == STATE_OPEN:
+        #    self.transport.write(message_b)
         else:
             message_b = self.symmetric.encrypt(self.symmetric_cypher, message_b, self.synthesis_algorithm,
                                                self.cypher_mode,

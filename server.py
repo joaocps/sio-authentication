@@ -9,10 +9,10 @@ import logging
 import re
 import os
 import getpass
-import server_cert
 from aio_tcpserver import tcp_server
-from default_crypto import Asymmetric, Symmetric
 
+from citizen_card import CitizenCard
+from default_crypto import Asymmetric, Symmetric
 
 logger = logging.getLogger('root')
 
@@ -42,6 +42,7 @@ class ClientHandler(asyncio.Protocol):
         self.peername = ''
         self.asymmetric_encrypt = Asymmetric()
         self.symmetric = Symmetric()
+        self.citizen_card = CitizenCard()
 
         self.symmetric_cypher = None
         self.cypher_mode = None
@@ -59,16 +60,12 @@ class ClientHandler(asyncio.Protocol):
         :param transport: The transport stream to use with this client
         :return:
         """
-
-        server_cert.main()
-
         self.peername = transport.get_extra_info('peername')
         logger.info('\n\nConnection from {}'.format(self.peername))
 
         logger.info("New client connected, introduce password to generate rsa key")
         password = getpass.getpass('Password:')
 
-        # remove this
         if not os.path.exists("server-keys"):
             try:
                 os.mkdir("server-keys")
@@ -150,7 +147,7 @@ class ClientHandler(asyncio.Protocol):
         elif mtype == 'DATA':
             ret = self.process_data(message)
         elif mtype == 'AUTHENTICATION_RESPONSE':
-            print(message)
+            ret = self.process_authentication(message)
         elif mtype == 'CLOSE':
             ret = self.process_close(message)
         else:
@@ -170,6 +167,33 @@ class ClientHandler(asyncio.Protocol):
 
             self.state = STATE_CLOSE
             self.transport.close()
+
+    def process_authentication(self, message: str) -> bool:
+
+        logger.debug("Process Authentication: {}".format(message))
+
+        if self.state != STATE_CONNECT:
+            logger.warning("Invalid state. Discarding")
+            return False
+
+        if not 'response' in message:
+            logger.warning("No challenge response in Authentication")
+            return False
+
+        if not 'certificate' in message:
+            logger.warning("No client certificate in Authentication")
+            return False
+
+        pubkey = self.citizen_card.deserialize_x509_pem_cert_public_key(base64.b64decode(message['certificate']))
+        #self.citizen_card.deserialize_x509_pem_cert(base64.b64decode(message['certificate']))
+
+        # Need to verify signature with signature already stored inside server trust certificates
+        if self.citizen_card.verify_signature(pubkey,
+                                              base64.b64decode(message['response']),
+                                              bytes(self.one_time_nonce, encoding='utf8')):
+            print("ALLRIGHHHHHHHT")
+        else:
+            print("BAAAAAAAAAAAAAAAAAAAD")
 
     def process_open(self, message: str) -> bool:
         """
@@ -300,6 +324,7 @@ class ClientHandler(asyncio.Protocol):
 
     def generate_nonce(self):
         self.one_time_nonce = secrets.token_urlsafe(32)
+        print(base64.b64encode(self.one_time_nonce.encode()))
 
 
 def main():
