@@ -10,9 +10,11 @@ import re
 import os
 import getpass
 from aio_tcpserver import tcp_server
+from cryptography.hazmat.backends import default_backend
 
 from citizen_card import CitizenCard
 from default_crypto import Asymmetric, Symmetric
+from cryptography import x509
 
 logger = logging.getLogger('root')
 
@@ -26,6 +28,7 @@ storage_dir = 'files'
 crypto_dir = './server-keys'
 
 
+# TODO assinar challenge
 class ClientHandler(asyncio.Protocol):
     def __init__(self, signal):
         """
@@ -48,6 +51,7 @@ class ClientHandler(asyncio.Protocol):
         self.cypher_mode = None
         self.synthesis_algorithm = None
         self.client_pub = None
+        self.cert_pubkey = None
         self.server_pub = None
         self.server_priv = None
 
@@ -101,11 +105,18 @@ class ClientHandler(asyncio.Protocol):
         logger.debug('Received: {}'.format(data))
         if self.state == STATE_CONNECT:
             data = self.symmetric.handshake_decrypt(data)
+        elif self.state == STATE_OPEN:
+            if self.citizen_card.verify_signature(self.cert_pubkey,
+                                                  data[-256:],
+                                                  data[:len(data) - 256]):
+                data = data[:len(data) - 256]
+                data = self.symmetric.decrypt(self.symmetric_cypher, data, self.synthesis_algorithm,
+                                              self.cypher_mode,
+                                              privkey=self.server_priv)
         else:
             data = self.symmetric.decrypt(self.symmetric_cypher, data, self.synthesis_algorithm,
                                           self.cypher_mode,
                                           privkey=self.server_priv)
-
         try:
             self.buffer += data.decode()
         except:
@@ -172,6 +183,7 @@ class ClientHandler(asyncio.Protocol):
 
     def process_authentication_facial(self, message: str) -> bool:
         print(message['frame'])
+
     def process_authentication(self, message: str) -> bool:
 
         logger.debug("Process Authentication: {}".format(message))
@@ -188,18 +200,27 @@ class ClientHandler(asyncio.Protocol):
             logger.warning("No client certificate in Authentication")
             return False
 
-        pubkey = self.citizen_card.deserialize_x509_pem_cert_public_key(base64.b64decode(message['certificate']))
-        #self.citizen_card.deserialize_x509_pem_cert(base64.b64decode(message['certificate']))
+        self.cert_pubkey = self.citizen_card.deserialize_x509_pem_cert_public_key(
+            base64.b64decode(message['certificate']))
+        # self.citizen_card.deserialize_x509_pem_cert(base64.b64decode(message['certificate']))
 
         # Need to verify signature with signature already stored inside server trust certificates
-        if self.citizen_card.verify_signature(pubkey,
-                                              base64.b64decode(message['response']),
-                                              bytes(self.one_time_nonce, encoding='utf8')):
-            print("CERTIFICADO VERIFICADO E CORRECTO!")
+        if self.citizen_card.verify_cert_cc(x509.load_pem_x509_certificate(
+                base64.b64decode(message['certificate']), default_backend())):
+            if self.citizen_card.verify_signature(self.cert_pubkey,
+                                                  base64.b64decode(message['response']),
+                                                  bytes(self.one_time_nonce, encoding='utf8')):
+                logger.info("Client passed challenge waiting for file")
+                self._send({'type': 'CHALLENGE OK'})
+            else:
+                logger.error("Client failed challenge")
+                self.transport.close()
         else:
-            print("BAAAAAAAAAAAAAAAAAAAD")
+            logger.error("Could not validate certificate")
+            self.transport.close()
 
         return True
+
     def process_open(self, message: str) -> bool:
         """
         Processes an OPEN message from the client

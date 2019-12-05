@@ -94,6 +94,36 @@ class Asymmetric(object):
         )
         return plaintext
 
+    """
+    Sign message with rsa key 
+    valid for server and client 
+    """
+
+    def sign(self, privkey, message):
+        return privkey.sign(message,
+                            asymmetric.padding.PSS(
+                                mgf=asymmetric.padding.MGF1(hashes.SHA256()),
+                                salt_length=asymmetric.padding.PSS.MAX_LENGTH
+                            ),
+                            hashes.SHA256()
+                            )
+
+    """
+    Verify message signature
+    Valid for server and client
+    """
+
+    def verify(self, pubkey, message, signature):
+        return pubkey.verify(
+            signature,
+            message,
+            asymmetric.padding.PSS(
+                mgf=asymmetric.padding.MGF1(hashes.SHA256()),
+                salt_length=asymmetric.padding.PSS.MAX_LENGTH
+            ),
+            hashes.SHA256()
+        )
+
 
 class Symmetric:
     """

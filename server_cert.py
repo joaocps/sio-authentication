@@ -22,6 +22,7 @@ class ServerCert:
     """
     Generate RSA key pair for certificate
     """
+
     def key_gen(self, password):
         self.private_key = rsa.generate_private_key(
             public_exponent=65537,
@@ -36,9 +37,11 @@ class ServerCert:
                     format=serialization.PrivateFormat.TraditionalOpenSSL,
                     encryption_algorithm=serialization.BestAvailableEncryption(password.encode()),
                 ))
+
     """
     Generate server self signed certificate 
     """
+
     def cert_gen(self):
         subject = issuer = x509.Name([
             x509.NameAttribute(NameOID.COUNTRY_NAME, u"PT"),
@@ -73,6 +76,7 @@ class ServerCert:
     """
     Test validity of server certificate
     """
+
     def is_valid(self, cert):
         if cert.not_valid_before < datetime.datetime.utcnow() < cert.not_valid_after:
             try:

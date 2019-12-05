@@ -46,11 +46,7 @@ class ClientProtocol(asyncio.Protocol):
         self.asymmetric_encrypt = Asymmetric()
         self.symmetric = Symmetric()
 
-        # try:
-        #     self.citizen_card = CitizenCard()
-        # except:
-        #     logger.error("Citizen card reader probably not connected! Exiting ...")
-        #     exit(1)
+        self.challenge_passed = False
         self.citizen_card = None
         self.face_rec = None
 
@@ -62,6 +58,7 @@ class ClientProtocol(asyncio.Protocol):
         self._private_key = None
         self.server_pub = None
         self.password = None
+        self.certificate = None
 
         self.auth_type = None
 
@@ -141,28 +138,16 @@ class ClientProtocol(asyncio.Protocol):
         :return: No return
         """
         logger.info("")
-        # self.veritfy_card_connection()
-
-        self.simple_menu()
 
         self.transport = transport
 
+        self.simple_menu()
+
         logger.debug('Connected to Server')
-
-        # GET CC pubkey
-        # publickeycc = self.citizen_card.get_public_key()
-        # print(self.citizen_card.serialize(publickeycc))
-
-        # GET CC privkey
-        # print(self.citizen_card.get_private_key())
-
-        # signed = self.citizen_card.sign_with_cc("Stupid Content")
-        # print(signed)
-
-        # self.authentication()
         self.symmetric_cypher, self.cypher_mode, self.synthesis_algorithm = self.handshake()
 
-        # print(self._public_key)
+        # Esta mensagem apenas será enviada se passar no challenge por isso foi o seu envio foi para a função on_frame
+        #
         # message = {'type': 'OPEN',
         #            'file_name': self.file_name,
         #            'symmetric_cypher': self.symmetric_cypher,
@@ -172,7 +157,7 @@ class ClientProtocol(asyncio.Protocol):
         #            'client_public_key': self._public_key.decode()
         #            }
         # self._send(message)
-
+        #
         # logger.info(message)
 
         self.state = STATE_OPEN
@@ -229,6 +214,7 @@ class ClientProtocol(asyncio.Protocol):
         if mtype == 'OK':  # Server replied OK. We can advance the state
             if self.state == STATE_OPEN:
                 logger.info("Channel open")
+                print(self.challenge_passed)
                 self.server_pub = self.asymmetric_encrypt.load_pub_from_str(message["server_pub_key"].encode())
                 self.send_file(self.file_name)
             elif self.state == STATE_DATA:  # Got an OK during a message transfer.
@@ -243,11 +229,15 @@ class ClientProtocol(asyncio.Protocol):
                 challenge_response = self.citizen_card.sign_with_cc(message["challenge"])
 
                 # Only need the digital signature certificate from cc
-                certificate = self.citizen_card.get_x509_certificates(KEY_USAGE=lambda x: x.value.digital_signature)
+                self.certificate = self.citizen_card.get_x509_certificates(
+                    KEY_USAGE=lambda x: x.value.digital_signature)
+                self.certificate = self.certificate[0]
                 # Convert certificate to bytes
-                bytes_cert = self.citizen_card.serialize(certificate[0])
-                print(bytes_cert)
-                print(x509.load_pem_x509_certificate(bytes_cert, default_backend()).public_key())
+                bytes_cert = self.citizen_card.serialize(self.certificate)
+
+                # print debug
+                # print(bytes_cert)
+                # print(x509.load_pem_x509_certificate(bytes_cert, default_backend()).public_key())
 
                 self._send({'type': 'AUTHENTICATION_RESPONSE',
                             'response': base64.b64encode(bytes(challenge_response)).decode(),
@@ -258,6 +248,17 @@ class ClientProtocol(asyncio.Protocol):
                 # PROBLEMA NA DECIFRA COM O PADDING
                 self._send({'type': 'AUTHENTICATION_RESPONSE_FACIAL',
                             'frame': base64.b64encode(frame).decode()})
+        elif mtype == 'CHALLENGE OK':
+            message = {'type': 'OPEN',
+                       'file_name': self.file_name,
+                       'symmetric_cypher': self.symmetric_cypher,
+                       'cypher_mode': self.cypher_mode,
+                       'synthesis_algorithm': self.synthesis_algorithm,
+                       # É SUPOSTO ENVIAR ASSIM (str) A PUB KEY?
+                       'client_public_key': self._public_key.decode()
+                       }
+            self._send(message)
+            self.challenge_passed = True
 
         elif mtype == 'ERROR':
             logger.warning("Got error from server: {}".format(message.get('data', None)))
@@ -312,12 +313,17 @@ class ClientProtocol(asyncio.Protocol):
         """
 
         message_b = (json.dumps(message) + '\r\n').encode()
-        if self.state == STATE_CONNECT or self.state == STATE_OPEN:
+        if self.state == STATE_CONNECT:
             message_b = self.symmetric.handshake_encrypt(message_b)
-        # TRY 2dez
-        #elif self.state == STATE_OPEN:
-        #    self.transport.write(message_b)
-        else:
+        elif self.state == STATE_OPEN and self.challenge_passed is False:
+            message_b = self.symmetric.handshake_encrypt(message_b)
+        elif self.state == STATE_OPEN and self.challenge_passed is True:
+            message_b = self.symmetric.encrypt(self.symmetric_cypher, message_b, self.synthesis_algorithm,
+                                               self.cypher_mode,
+                                               pkey=self.server_pub)
+            message_b += bytes(self.citizen_card.sign_with_cc(message_b))
+            self.state = STATE_DATA
+        elif self.state == STATE_DATA:
             message_b = self.symmetric.encrypt(self.symmetric_cypher, message_b, self.synthesis_algorithm,
                                                self.cypher_mode,
                                                pkey=self.server_pub)

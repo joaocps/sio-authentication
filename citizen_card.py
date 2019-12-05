@@ -10,16 +10,21 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives import asymmetric
 from cryptography.x509.oid import *
 from cryptography.x509 import *
+from cryptography.exceptions import InvalidSignature
 import os, PyKCS11, sys
+import logging
 import cryptography
 import socket
+import datetime
 
+logger = logging.getLogger('root')
 pkcs11 = PyKCS11.PyKCS11Lib()
 
 # Add option for different SO (Win or linux)
 pkcs11.load('C:\\Windows\\System32\\pteidpkcs11.dll' if sys.platform == 'win32' else '/usr/local/lib/libpteidpkcs11.so')
 
 
+# TODO verificar data dos certs
 class CitizenCard:
     def __init__(self):
         """
@@ -104,6 +109,93 @@ class CitizenCard:
     def verify_signature(self, pkey, signature, data):
         try:
             pkey.verify(signature, data, asymmetric.padding.PKCS1v15(), hashes.SHA1())
-        except cryptography.exceptions.InvalidSignature:
+        except InvalidSignature:
             return False
         return True
+
+    def verify_cert_cc(self, cert):
+        if cert.not_valid_before < datetime.datetime.utcnow() < cert.not_valid_after:
+            cn = cert.issuer.get_attributes_for_oid(NameOID.COMMON_NAME)
+            issuerid = cn[0].value[-4:]
+            c = open(
+                "certs\\cc\\EC de Aute ticacao do Cartao de Cidadao " + issuerid + ".pem"
+                if sys.platform == 'win32'
+                else "certs/cc/EC de Aute ticacao do Cartao de Cidadao " + issuerid + ".pem",
+                "rb")
+            c = load_pem_x509_certificate(c.read(), default_backend())
+            if c.not_valid_before < datetime.datetime.utcnow() < c.not_valid_after:
+                try:
+                    c.public_key().verify(
+                        cert.signature,
+                        cert.tbs_certificate_bytes,
+                        asymmetric.padding.PKCS1v15(),
+                        cert.signature_hash_algorithm,
+                    )
+                except InvalidSignature:
+                    logger.error("Could not validate Citizen Card certificate")
+                    return False
+            else:
+                logger.error("Sub CA certificate expired")
+                return False
+        else:
+            logger.error("Client certificate expired")
+            return False
+        cn_sub_ca = c.issuer.get_attributes_for_oid(NameOID.COMMON_NAME)
+        sub_ca_upid = cn_sub_ca[0].value[-3:]
+        return self.verify_cert_subca(c, sub_ca_upid)
+
+    def verify_cert_subca(self, cert, issuerid):
+        if cert.not_valid_before < datetime.datetime.utcnow() < cert.not_valid_after:
+            c = open(
+                "certs\\cc\\Cartao de Cidadao " + issuerid + ".pem"
+                if sys.platform == 'win32'
+                else "certs/cc/Cartao de Cidadao " + issuerid + ".pem",
+                "rb")
+            c = load_pem_x509_certificate(c.read(), default_backend())
+            if c.not_valid_before < datetime.datetime.utcnow() < c.not_valid_after:
+                try:
+                    c.public_key().verify(
+                        cert.signature,
+                        cert.tbs_certificate_bytes,
+                        asymmetric.padding.PKCS1v15(),
+                        cert.signature_hash_algorithm,
+                    )
+                except InvalidSignature:
+                    logger.error("Could not validate Sub CA certificate")
+                    return False
+            else:
+                logger.error("Sub CA 2 certificate expired")
+                return False
+        else:
+            logger.error("Sub CA certificate expired")
+            return False
+        return self.verify_cert_rootca(c)
+
+    def verify_cert_rootca(self, cert):
+        if cert.not_valid_before < datetime.datetime.utcnow() < cert.not_valid_after:
+            c = open(
+                "certs\\cc\\ecraizestado.pem"
+                if sys.platform == 'win32'
+                else "certs/cc/ecraizestado.pem",
+                "rb")
+            c = load_pem_x509_certificate(c.read(), default_backend())
+            if c.not_valid_before < datetime.datetime.utcnow() < c.not_valid_after:
+                try:
+                    c.public_key().verify(
+                        cert.signature,
+                        cert.tbs_certificate_bytes,
+                        asymmetric.padding.PKCS1v15(),
+                        cert.signature_hash_algorithm,
+                    )
+                except InvalidSignature:
+                    logger.error("Could not validate Sub CA certificate")
+                    return False
+            else:
+                logger.error("Root CA certificate expired")
+                return False
+        else:
+            logger.error("Sub CA 2 certificate expired")
+            return False
+        logger.info("Validation chain complete")
+        return True
+
