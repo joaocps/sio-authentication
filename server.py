@@ -148,6 +148,8 @@ class ClientHandler(asyncio.Protocol):
             ret = self.process_data(message)
         elif mtype == 'AUTHENTICATION_RESPONSE':
             ret = self.process_authentication(message)
+        elif mtype == 'AUTHENTICATION_RESPONSE_FACIAL':
+            ret = self.process_authentication_facial(message)
         elif mtype == 'CLOSE':
             ret = self.process_close(message)
         else:
@@ -168,6 +170,8 @@ class ClientHandler(asyncio.Protocol):
             self.state = STATE_CLOSE
             self.transport.close()
 
+    def process_authentication_facial(self, message: str) -> bool:
+        print(message['frame'])
     def process_authentication(self, message: str) -> bool:
 
         logger.debug("Process Authentication: {}".format(message))
@@ -191,10 +195,11 @@ class ClientHandler(asyncio.Protocol):
         if self.citizen_card.verify_signature(pubkey,
                                               base64.b64decode(message['response']),
                                               bytes(self.one_time_nonce, encoding='utf8')):
-            print("ALLRIGHHHHHHHT")
+            print("CERTIFICADO VERIFICADO E CORRECTO!")
         else:
             print("BAAAAAAAAAAAAAAAAAAAD")
 
+        return True
     def process_open(self, message: str) -> bool:
         """
         Processes an OPEN message from the client

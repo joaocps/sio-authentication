@@ -13,6 +13,7 @@ from cryptography.hazmat.backends import default_backend
 
 from default_crypto import Asymmetric, Symmetric
 from citizen_card import CitizenCard
+from facial_rec import FaceRecognition
 
 logger = logging.getLogger('root')
 
@@ -45,11 +46,13 @@ class ClientProtocol(asyncio.Protocol):
         self.asymmetric_encrypt = Asymmetric()
         self.symmetric = Symmetric()
 
-        try:
-            self.citizen_card = CitizenCard()
-        except:
-            logger.error("Citizen card reader probably not connected! Exiting ...")
-            exit(1)
+        # try:
+        #     self.citizen_card = CitizenCard()
+        # except:
+        #     logger.error("Citizen card reader probably not connected! Exiting ...")
+        #     exit(1)
+        self.citizen_card = None
+        self.face_rec = None
 
         self.symmetric_cypher = None
         self.cypher_mode = None
@@ -59,6 +62,8 @@ class ClientProtocol(asyncio.Protocol):
         self._private_key = None
         self.server_pub = None
         self.password = None
+
+        self.auth_type = None
 
     def authentication(self):
         logger.info("Starting authentication process ... ")
@@ -95,6 +100,32 @@ class ClientProtocol(asyncio.Protocol):
 
         return symmetric_cypher, cypher_mode, synthesis_algorithm
 
+    def simple_menu(self):
+        logger.info("Select authentication type:")
+        logger.info("1 - Citizen card")
+        logger.info("2 - Facial recognition")
+
+        opt = int(input(">>"))
+
+        if opt == 1:
+            self.auth_type = "cc"
+            try:
+                self.citizen_card = CitizenCard()
+            except:
+                logger.error("Citizen card reader probably not connected! Exiting ...")
+                exit(1)
+            self.veritfy_card_connection()
+        elif opt == 2:
+            self.auth_type = "face"
+            try:
+                self.face_rec = FaceRecognition()
+            except:
+                logger.error("Webcam probably not connected! Exiting ...")
+                exit(1)
+        else:
+            logger.error("Enter correct number please.")
+            self.simple_menu()
+
     def veritfy_card_connection(self):
         try:
             logger.info(self.citizen_card.get_name())
@@ -109,7 +140,10 @@ class ClientProtocol(asyncio.Protocol):
         :param transport: The transport stream to use for this client
         :return: No return
         """
-        self.veritfy_card_connection()
+        logger.info("")
+        # self.veritfy_card_connection()
+
+        self.simple_menu()
 
         self.transport = transport
 
@@ -204,7 +238,7 @@ class ClientProtocol(asyncio.Protocol):
                 logger.warning("Ignoring message from server")
             return
         elif mtype == 'AUTHENTICATION_CHALLENGE':  # Server replied with a challenge to authenticate clients
-            if self.state == STATE_OPEN:
+            if self.state == STATE_OPEN and self.auth_type == "cc":
                 logger.info("Authentication process, signing challenge from server")
                 challenge_response = self.citizen_card.sign_with_cc(message["challenge"])
 
@@ -218,6 +252,13 @@ class ClientProtocol(asyncio.Protocol):
                 self._send({'type': 'AUTHENTICATION_RESPONSE',
                             'response': base64.b64encode(bytes(challenge_response)).decode(),
                             'certificate': base64.b64encode(bytes_cert).decode()})
+
+            if self.state == STATE_OPEN and self.auth_type == "face":
+                rgb_frame, frame = self.face_rec.take_picture()
+                # PROBLEMA NA DECIFRA COM O PADDING
+                self._send({'type': 'AUTHENTICATION_RESPONSE_FACIAL',
+                            'frame': base64.b64encode(frame).decode()})
+
         elif mtype == 'ERROR':
             logger.warning("Got error from server: {}".format(message.get('data', None)))
         else:
