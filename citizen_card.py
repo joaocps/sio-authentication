@@ -198,4 +198,3 @@ class CitizenCard:
             return False
         logger.info("Validation chain complete")
         return True
-

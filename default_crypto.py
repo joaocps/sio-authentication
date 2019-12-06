@@ -16,7 +16,7 @@ class Asymmetric(object):
     Class with asymmetric encryption methods
     """
 
-    def generate_rsa_keys(self, path, client_name, password):
+    def generate_rsa_keys(self, password):
         """
         Create and save the rsa private and public key to file
         """
@@ -26,16 +26,10 @@ class Asymmetric(object):
             format=serialization.PrivateFormat.PKCS8,
             encryption_algorithm=serialization.BestAvailableEncryption(password.encode()))
 
-        with open(os.path.join(path, client_name + '_private_rsa.pem'), 'wb') as file:
-            file.write(pem)
-
         public_key = private_key.public_key()
         public_pem = public_key.public_bytes(
             encoding=serialization.Encoding.PEM,
             format=serialization.PublicFormat.SubjectPublicKeyInfo)
-
-        with open(os.path.join(path, client_name + '_public_rsa.pem'), 'wb') as file:
-            file.write(public_pem)
 
         return private_key, public_pem
 
@@ -96,7 +90,7 @@ class Asymmetric(object):
 
     """
     Sign message with rsa key 
-    valid for server and client 
+    Valid just for server certificate 
     """
 
     def sign(self, privkey, message):
@@ -110,7 +104,7 @@ class Asymmetric(object):
 
     """
     Verify message signature
-    Valid for server and client
+    Valid just for server certificate
     """
 
     def verify(self, pubkey, message, signature):

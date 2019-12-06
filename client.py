@@ -70,16 +70,7 @@ class ClientProtocol(asyncio.Protocol):
         logger.info("Introduce password to generate rsa key: ")
         self.password = getpass.getpass('Password:')
 
-        if not os.path.exists("client-keys"):
-            try:
-                os.mkdir("client-keys")
-                self._private_key, self._public_key = self.asymmetric_encrypt.generate_rsa_keys(crypto_dir, "client",
-                                                                                                self.password)
-            except:
-                logger.exception("Unable to create storage directory")
-        else:
-            self._private_key, self._public_key = self.asymmetric_encrypt.generate_rsa_keys(crypto_dir, "client",
-                                                                                            self.password)
+        self._private_key, self._public_key = self.asymmetric_encrypt.generate_rsa_keys(self.password)
 
         symmetric_cypher = int(input("Symmetric Cypher ( aes128(1), 3des(2) or chacha20(3) ): "))
         cypher_mode = int(input("Cypher mode ( cbc(1) or ctr(2) ): "))
@@ -172,6 +163,11 @@ class ClientProtocol(asyncio.Protocol):
         """
         logger.debug('Received: {}'.format(data))
         if self.state == STATE_OPEN:
+            signature = data[-256:]
+            data = data[:len(data) - 256]
+            f = open("certs/server.pem", "rb")
+            server_cert = x509.load_pem_x509_certificate(f.read(), default_backend())
+            self.asymmetric_encrypt.verify(server_cert.public_key(), data, signature)
             data = self.symmetric.handshake_decrypt(data)
             logger.debug('decrypted: {}'.format(data))
         try:
@@ -227,6 +223,7 @@ class ClientProtocol(asyncio.Protocol):
             if self.state == STATE_OPEN and self.auth_type == "cc":
                 logger.info("Authentication process, signing challenge from server")
                 challenge_response = self.citizen_card.sign_with_cc(message["challenge"])
+                # validar assinatura do server aqui
 
                 # Only need the digital signature certificate from cc
                 self.certificate = self.citizen_card.get_x509_certificates(
@@ -275,11 +272,6 @@ class ClientProtocol(asyncio.Protocol):
         :return:
         """
         logger.info('The server closed the connection')
-
-        if os.path.exists("client-keys"):
-            os.remove("client-keys/" + 'client_private_rsa.pem')
-            os.remove("client-keys/" + 'client_public_rsa.pem')
-
         self.loop.stop()
 
     def send_file(self, file_name: str) -> None:

@@ -21,22 +21,23 @@ class ServerCert:
 
     """
     Generate RSA key pair for certificate
+    Note: password is hardcoded just for academic purpose 
     """
 
-    def key_gen(self, password):
+    def key_gen(self):
         self.private_key = rsa.generate_private_key(
             public_exponent=65537,
             key_size=2048,
             backend=default_backend()
         )
-        if not os.path.exists("server_keys"):
+        if not os.path.exists("server-keys"):
             os.mkdir("server-keys")
-            with open("server-keys/certKey.pem", "wb") as f:
-                f.write(self.private_key.private_bytes(
-                    encoding=serialization.Encoding.PEM,
-                    format=serialization.PrivateFormat.TraditionalOpenSSL,
-                    encryption_algorithm=serialization.BestAvailableEncryption(password.encode()),
-                ))
+        with open("server-keys/certKey.pem", "wb") as f:
+            f.write(self.private_key.private_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PrivateFormat.TraditionalOpenSSL,
+                encryption_algorithm=serialization.BestAvailableEncryption(b'serverSIO'),
+            ))
 
     """
     Generate server self signed certificate 
@@ -89,8 +90,21 @@ class ServerCert:
         else:
             return False
 
+    def load_cert(self):
+        with open("certs/server.pem", "rb") as f:
+            cert = f.read()
+        return load_pem_x509_certificate(cert, default_backend())
 
-def main(password=""):
+    def load_privKey_cert(self):
+        with open("server-keys/certKey.pem", "rb") as key:
+            return serialization.load_pem_private_key(
+                key.read(),
+                password=b'serverSIO',
+                backend=default_backend()
+            )
+
+
+def main():
     """
     Main function that invoke method to create certificate if none exists or
     test validity this exists, if validity fails generate a new certificate
@@ -98,17 +112,16 @@ def main(password=""):
     s = ServerCert()
     if not os.path.exists("certs/server.pem"):
         logger.info("No certificate found, Generating")
-        s.key_gen(password)
+        s.key_gen()
         s.cert_gen()
     else:
-        with open("certs/server.pem", "rb") as f:
-            cert = f.read()
-            if s.is_valid(load_pem_x509_certificate(cert, default_backend())):
-                logger.info("Certificate still valid")
-            else:
-                logger.error("Certificate expired generating a new one")
-                s.key_gen(password)
-                s.cert_gen()
+        cert = s.load_cert()
+        if s.is_valid(cert):
+            logger.info("Certificate still valid")
+        else:
+            logger.error("Certificate expired generating a new one")
+            s.key_gen()
+            s.cert_gen()
 
 # to test module
 # if __name__ == '__main__':

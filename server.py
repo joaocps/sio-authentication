@@ -9,12 +9,14 @@ import logging
 import re
 import os
 import getpass
+
 from aio_tcpserver import tcp_server
 from cryptography.hazmat.backends import default_backend
 
 from citizen_card import CitizenCard
 from default_crypto import Asymmetric, Symmetric
 from cryptography import x509
+import server_cert
 
 logger = logging.getLogger('root')
 
@@ -47,13 +49,20 @@ class ClientHandler(asyncio.Protocol):
         self.symmetric = Symmetric()
         self.citizen_card = CitizenCard()
 
+        self.sCert = server_cert.ServerCert()
+
         self.symmetric_cypher = None
         self.cypher_mode = None
         self.synthesis_algorithm = None
+
         self.client_pub = None
         self.cert_pubkey = None
+
         self.server_pub = None
         self.server_priv = None
+
+        self.server_cert = None
+        self.server_cert_priv = None
 
         self.one_time_nonce = None
 
@@ -64,24 +73,15 @@ class ClientHandler(asyncio.Protocol):
         :param transport: The transport stream to use with this client
         :return:
         """
+        # validate server cert
+        server_cert.main()
         self.peername = transport.get_extra_info('peername')
         logger.info('\n\nConnection from {}'.format(self.peername))
 
         logger.info("New client connected, introduce password to generate rsa key")
         password = getpass.getpass('Password:')
 
-        if not os.path.exists("server-keys"):
-            try:
-                os.mkdir("server-keys")
-                self.server_priv, self.server_pub = self.asymmetric_encrypt.generate_rsa_keys(crypto_dir,
-                                                                                              str(self.peername[1]),
-                                                                                              password)
-            except:
-                logger.exception("Unable to create storage directory")
-        else:
-            self.server_priv, self.server_pub = self.asymmetric_encrypt.generate_rsa_keys(crypto_dir,
-                                                                                          str(self.peername[1]),
-                                                                                          password)
+        self.server_priv, self.server_pub = self.asymmetric_encrypt.generate_rsa_keys(password)
 
         self.transport = transport
 
@@ -92,7 +92,8 @@ class ClientHandler(asyncio.Protocol):
 
     def authenticate_client(self):
         self.generate_nonce()
-        self._send({'type': 'AUTHENTICATION_CHALLENGE', 'challenge': self.one_time_nonce})
+        message = {'type': 'AUTHENTICATION_CHALLENGE', 'challenge': self.one_time_nonce}
+        self._send(message)
 
     def data_received(self, data: bytes) -> None:
         """
@@ -327,10 +328,6 @@ class ClientHandler(asyncio.Protocol):
             self.file.close()
             self.file = None
 
-        if os.path.exists("server-keys"):
-            os.remove("server-keys/" + str(self.peername[1]) + '_private_rsa.pem')
-            os.remove("server-keys/" + str(self.peername[1]) + '_public_rsa.pem')
-
         self.state = STATE_CLOSE
 
         return True
@@ -346,16 +343,19 @@ class ClientHandler(asyncio.Protocol):
         message_b = (json.dumps(message) + '\r\n').encode()
         if self.state == STATE_CONNECT:
             message_b = self.symmetric.handshake_encrypt(message_b)
+            # sign msg and send
+            self.server_cert = self.sCert.load_cert()
+            self.server_cert_priv = self.sCert.load_privKey_cert()
+            message_b += self.asymmetric_encrypt.sign(self.server_cert_priv, message_b)
         self.transport.write(message_b)
 
     def generate_nonce(self):
         self.one_time_nonce = secrets.token_urlsafe(32)
-        print(base64.b64encode(self.one_time_nonce.encode()))
+        # print(base64.b64encode(self.one_time_nonce.encode()))
 
 
 def main():
     global storage_dir
-
     parser = argparse.ArgumentParser(description='Receives files from clients.')
     parser.add_argument('-v', action='count', dest='verbose',
                         help='Shows debug messages (default=False)',
