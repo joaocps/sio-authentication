@@ -10,6 +10,7 @@ from cryptography.exceptions import InvalidSignature
 import datetime
 import os
 import logging
+import sys
 
 logger = logging.getLogger('root')
 
@@ -32,7 +33,8 @@ class ServerCert:
         )
         if not os.path.exists("server-keys"):
             os.mkdir("server-keys")
-        with open("server-keys/certKey.pem", "wb") as f:
+        with open("certs\\certKey.pem" if sys.platform == 'win32'
+                  else "server-keys/certKey.pem", "wb") as f:
             f.write(self.private_key.private_bytes(
                 encoding=serialization.Encoding.PEM,
                 format=serialization.PrivateFormat.TraditionalOpenSSL,
@@ -71,7 +73,8 @@ class ServerCert:
 
             if not os.path.exists("certs"):
                 os.mkdir("certs")
-            with open("certs/server.pem", "wb") as f:
+            with open("certs\\server.pem" if sys.platform == 'win32'
+                      else "certs/server.pem", "wb") as f:
                 f.write(cert.public_bytes(serialization.Encoding.PEM))
 
     """
@@ -91,12 +94,14 @@ class ServerCert:
             return False
 
     def load_cert(self):
-        with open("certs/server.pem", "rb") as f:
+        with open("certs\\server.pem" if sys.platform == 'win32'
+                  else "certs/server.pem", "rb") as f:
             cert = f.read()
         return load_pem_x509_certificate(cert, default_backend())
 
     def load_privKey_cert(self):
-        with open("server-keys/certKey.pem", "rb") as key:
+        with open("certs\\server.pem" if sys.platform == 'win32'
+                  else "server-keys/certKey.pem", "rb") as key:
             return serialization.load_pem_private_key(
                 key.read(),
                 password=b'serverSIO',
@@ -110,7 +115,8 @@ def main():
     test validity this exists, if validity fails generate a new certificate
     """
     s = ServerCert()
-    if not os.path.exists("certs/server.pem"):
+    if not os.path.exists("certs\\server.pem" if sys.platform == 'win32'
+                          else "certs/server.pem"):
         logger.info("No certificate found, Generating")
         s.key_gen()
         s.cert_gen()
