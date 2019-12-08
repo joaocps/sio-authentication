@@ -225,7 +225,6 @@ class ClientProtocol(asyncio.Protocol):
             if self.state == STATE_OPEN and self.auth_type == "cc":
                 logger.info("Authentication process, signing challenge from server")
                 challenge_response = self.citizen_card.sign_with_cc(message["challenge"])
-                # validar assinatura do server aqui
 
                 # Only need the digital signature certificate from cc
                 self.certificate = self.citizen_card.get_x509_certificates(
@@ -239,6 +238,7 @@ class ClientProtocol(asyncio.Protocol):
                 # print(x509.load_pem_x509_certificate(bytes_cert, default_backend()).public_key())
 
                 self._send({'type': 'AUTHENTICATION_RESPONSE',
+                            'challenge': message['challenge'],
                             'response': base64.b64encode(bytes(challenge_response)).decode(),
                             'certificate': base64.b64encode(bytes_cert).decode()})
 
@@ -253,7 +253,6 @@ class ClientProtocol(asyncio.Protocol):
                        'symmetric_cypher': self.symmetric_cypher,
                        'cypher_mode': self.cypher_mode,
                        'synthesis_algorithm': self.synthesis_algorithm,
-                       # É SUPOSTO ENVIAR ASSIM (str) A PUB KEY?
                        'client_public_key': self._public_key.decode()
                        }
             self._send(message)
@@ -305,7 +304,7 @@ class ClientProtocol(asyncio.Protocol):
         :param message:
         :return:
         """
-
+        logger.debug("Send {}".format(message))
         message_b = (json.dumps(message) + '\r\n').encode()
         if self.state == STATE_CONNECT:
             message_b = self.symmetric.handshake_encrypt(message_b)

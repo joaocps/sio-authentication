@@ -30,7 +30,6 @@ storage_dir = 'files'
 crypto_dir = './server-keys'
 
 
-# TODO assinar challenge
 class ClientHandler(asyncio.Protocol):
     def __init__(self, signal):
         """
@@ -192,6 +191,9 @@ class ClientHandler(asyncio.Protocol):
         if self.state != STATE_CONNECT:
             logger.warning("Invalid state. Discarding")
             return False
+        if not 'challenge' in message:
+            logger.warning("No challenge in Authentication")
+            return False
 
         if not 'response' in message:
             logger.warning("No challenge response in Authentication")
@@ -201,24 +203,29 @@ class ClientHandler(asyncio.Protocol):
             logger.warning("No client certificate in Authentication")
             return False
 
-        self.cert_pubkey = self.citizen_card.deserialize_x509_pem_cert_public_key(
-            base64.b64decode(message['certificate']))
-        # self.citizen_card.deserialize_x509_pem_cert(base64.b64decode(message['certificate']))
-
-        # Need to verify signature with signature already stored inside server trust certificates
-        if self.citizen_card.verify_cert_cc(x509.load_pem_x509_certificate(
-                base64.b64decode(message['certificate']), default_backend())):
-            if self.citizen_card.verify_signature(self.cert_pubkey,
-                                                  base64.b64decode(message['response']),
-                                                  bytes(self.one_time_nonce, encoding='utf8')):
-                logger.info("Client passed challenge waiting for file")
-                self._send({'type': 'CHALLENGE OK'})
-            else:
-                logger.error("Client failed challenge")
-                self.transport.close()
+        if message['challenge'] != self.one_time_nonce:
+            logger.warning("Challenge mismatch")
+            return False
         else:
-            logger.error("Could not validate certificate")
-            self.transport.close()
+            logger.debug("Verifying challenge ")
+            self.cert_pubkey = self.citizen_card.deserialize_x509_pem_cert_public_key(
+                base64.b64decode(message['certificate']))
+            # self.citizen_card.deserialize_x509_pem_cert(base64.b64decode(message['certificate']))
+
+            # Need to verify signature with signature already stored inside server trust certificates
+            if self.citizen_card.verify_cert_cc(x509.load_pem_x509_certificate(
+                    base64.b64decode(message['certificate']), default_backend())):
+                if self.citizen_card.verify_signature(self.cert_pubkey,
+                                                      base64.b64decode(message['response']),
+                                                      bytes(self.one_time_nonce, encoding='utf8')):
+                    logger.info("Client passed challenge waiting for file")
+                    self._send({'type': 'CHALLENGE OK'})
+                else:
+                    logger.error("Client failed challenge")
+                    self.transport.close()
+            else:
+                logger.error("Could not validate certificate")
+                self.transport.close()
 
         return True
 

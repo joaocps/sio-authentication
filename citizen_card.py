@@ -1,21 +1,17 @@
-import base64
+import sys
+import PyKCS11
+import logging
+import datetime
 
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.primitives.ciphers.base import _CipherContext
 from cryptography.hazmat.backends.openssl.rsa import _RSAPublicKey
 from cryptography.hazmat.backends.openssl.x509 import _Certificate
-from cryptography.hazmat.primitives import padding, hashes
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives import asymmetric
 from cryptography.x509.oid import *
 from cryptography.x509 import *
 from cryptography.exceptions import InvalidSignature
-import os, PyKCS11, sys
-import logging
-import cryptography
-import socket
-import datetime
+
 
 logger = logging.getLogger('root')
 pkcs11 = PyKCS11.PyKCS11Lib()
@@ -24,7 +20,6 @@ pkcs11 = PyKCS11.PyKCS11Lib()
 pkcs11.load('C:\\Windows\\System32\\pteidpkcs11.dll' if sys.platform == 'win32' else '/usr/local/lib/libpteidpkcs11.so')
 
 
-# TODO verificar data dos certs
 class CitizenCard:
     def __init__(self):
         """
