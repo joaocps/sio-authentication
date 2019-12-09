@@ -14,7 +14,6 @@ from cryptography.hazmat.backends import default_backend
 
 from default_crypto import Asymmetric, Symmetric, OTP
 from citizen_card import CitizenCard_Client, CitizenCard_All
-from facial_rec import FaceRecognition
 
 logger = logging.getLogger('root')
 
@@ -22,9 +21,6 @@ STATE_CONNECT = 0
 STATE_OPEN = 1
 STATE_DATA = 2
 STATE_CLOSE = 3
-
-# GLOBAL
-crypto_dir = './client-keys'
 
 
 class ClientProtocol(asyncio.Protocol):
@@ -71,11 +67,7 @@ class ClientProtocol(asyncio.Protocol):
         logger.info("Starting authentication process ... ")
 
     def handshake(self):
-
-        logger.info("Introduce password to generate rsa key: ")
-        self.password = getpass.getpass('Password:')
-
-        self._private_key, self._public_key = self.asymmetric_encrypt.generate_rsa_keys(self.password)
+        self._private_key, self._public_key = self.asymmetric_encrypt.generate_rsa_keys()
 
         symmetric_cypher = int(input("Symmetric Cypher ( aes128(1), 3des(2) or chacha20(3) ): "))
         cypher_mode = int(input("Cypher mode ( cbc(1) or ctr(2) ): "))
@@ -98,7 +90,7 @@ class ClientProtocol(asyncio.Protocol):
         logger.info("1 - Citizen card")
         logger.info("2 - Login")
 
-        opt = int(input(">>"))
+        opt = int(input(">> "))
 
         if opt == 1:
             self.auth_type = "cc"
@@ -181,9 +173,7 @@ class ClientProtocol(asyncio.Protocol):
             self.asymmetric_encrypt.verify(server_cert.public_key(), data, signature)
             data = self.symmetric.handshake_decrypt(data)
             logger.debug('decrypted: {}'.format(data))
-        # else:
-        #     print("test")
-        #     data = self.symmetric.handshake_decrypt(data)
+
         try:
             self.buffer += data.decode()
         except:
@@ -224,7 +214,6 @@ class ClientProtocol(asyncio.Protocol):
         if mtype == 'OK':  # Server replied OK. We can advance the state
             if self.state == STATE_OPEN:
                 logger.info("Channel open")
-                print(self.challenge_passed)
                 self.server_pub = self.asymmetric_encrypt.load_pub_from_str(message["server_pub_key"].encode())
                 self.send_file(self.file_name)
             elif self.state == STATE_DATA:  # Got an OK during a message transfer.
@@ -233,7 +222,7 @@ class ClientProtocol(asyncio.Protocol):
             else:
                 logger.warning("Ignoring message from server")
             return
-        elif mtype == 'AUTHENTICATION_CHALLENGE' and self.auth_type == 'cc':  # Server replied with a challenge to authenticate clients
+        elif mtype == 'AUTHENTICATION_CHALLENGE':  # Server replied with a challenge to authenticate clients
             if self.state == STATE_OPEN and self.auth_type == "cc":
                 logger.info("Authentication process, signing challenge from server")
                 challenge_response = self.citizen_card.sign_with_cc(message["challenge"])
@@ -249,12 +238,6 @@ class ClientProtocol(asyncio.Protocol):
                             'challenge': message['challenge'],
                             'response': base64.b64encode(bytes(challenge_response)).decode(),
                             'certificate': base64.b64encode(bytes_cert).decode()})
-
-            # if self.state == STATE_OPEN and self.auth_type == "face":
-            #     rgb_frame, frame = self.face_rec.take_picture()
-            #     # PROBLEMA NA DECIFRA COM O PADDING
-            #     self._send({'type': 'AUTHENTICATION_RESPONSE_FACIAL',
-            #                 'frame': base64.b64encode(frame).decode()})
         elif mtype == 'CHALLENGE OK':
             message = {'type': 'OPEN',
                        'file_name': self.file_name,
@@ -265,8 +248,7 @@ class ClientProtocol(asyncio.Protocol):
                        }
             self._send(message)
             self.challenge_passed = True
-        # elif mtype == 'AUTHENTICATION_CHALLENGE' and self.auth_type == 'login':
-        #     pass
+
 
         elif mtype == 'ERROR':
             logger.warning("Got error from server: {}".format(message.get('data', None)))

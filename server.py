@@ -27,7 +27,6 @@ STATE_CLOSE = 3
 
 # GLOBAL
 storage_dir = 'files'
-crypto_dir = './server-keys'
 
 
 class ClientHandler(asyncio.Protocol):
@@ -67,6 +66,9 @@ class ClientHandler(asyncio.Protocol):
         self.one_time_nonce = None
         self.auth_type = None
 
+        # validate server cert
+        server_cert.main()
+
     def connection_made(self, transport) -> None:
         """
         Called when a client connects
@@ -74,20 +76,11 @@ class ClientHandler(asyncio.Protocol):
         :param transport: The transport stream to use with this client
         :return:
         """
-        # validate server cert
-        server_cert.main()
+
         self.peername = transport.get_extra_info('peername')
         logger.info('\n\nConnection from {}'.format(self.peername))
-
-        logger.info("New client connected, introduce password to generate rsa key")
-        password = getpass.getpass('Password:')
-
-        self.server_priv, self.server_pub = self.asymmetric_encrypt.generate_rsa_keys(password)
-
+        self.server_priv, self.server_pub = self.asymmetric_encrypt.generate_rsa_keys()
         self.transport = transport
-
-        # Asks for client authentication with CC challenge/Response
-        #self.authenticate_client()
 
         self.state = STATE_CONNECT
 
@@ -109,7 +102,6 @@ class ClientHandler(asyncio.Protocol):
 
         if self.state == STATE_CONNECT:
             data = self.symmetric.handshake_decrypt(data)
-            print(data)
         elif self.state == STATE_OPEN and self.auth_type == 'cc':
             if self.citizen_card.verify_signature(self.cert_pubkey,
                                                   data[-256:],
@@ -192,7 +184,6 @@ class ClientHandler(asyncio.Protocol):
             self.state = STATE_CLOSE
             self.transport.close()
 
-
     def process_authentication(self, message: str) -> bool:
 
         logger.debug("Process Authentication: {}".format(message))
@@ -219,7 +210,6 @@ class ClientHandler(asyncio.Protocol):
             logger.debug("Verifying challenge ")
             self.cert_pubkey = self.citizen_card.deserialize_x509_pem_cert_public_key(
                 base64.b64decode(message['certificate']))
-            # self.citizen_card.deserialize_x509_pem_cert(base64.b64decode(message['certificate']))
 
             # Need to verify signature with signature already stored inside server trust certificates
             if self.citizen_card.verify_cert_cc(x509.load_pem_x509_certificate(
@@ -237,6 +227,14 @@ class ClientHandler(asyncio.Protocol):
                 self.transport.close()
 
         return True
+
+    """
+    Proccess an OTP message from the client
+    
+    If one time password is valid send a
+    positive response, else closes connection
+    
+    """
 
     def process_OTP(self, message: str) -> bool:
         if self.otp.verify(base64.b64decode(message['token'])) is True:
@@ -263,8 +261,6 @@ class ClientHandler(asyncio.Protocol):
         if not 'file_name' in message:
             logger.warning("No filename in Open")
             return False
-
-        # print(message["client_public_key"])
 
         self.client_pub = self.asymmetric_encrypt.load_pub_from_str(message["client_public_key"].encode())
         self.symmetric_cypher = message["symmetric_cypher"]
@@ -375,7 +371,6 @@ class ClientHandler(asyncio.Protocol):
 
     def generate_nonce(self):
         self.one_time_nonce = secrets.token_urlsafe(32)
-        # print(base64.b64encode(self.one_time_nonce.encode()))
 
 
 def main():

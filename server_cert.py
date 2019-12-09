@@ -100,7 +100,6 @@ class ServerCert:
                                          cert.signature_hash_algorithm)
             except InvalidSignature:
                 return False
-
             return True
         else:
             return False
@@ -134,10 +133,6 @@ def main():
         s.cert_gen()
     else:
         cert = s.load_cert()
-        try:
-            print("CRL", cert.get_revoked_certificate_by_serial_number())
-        except AttributeError:
-            print("no crl")
         if s.is_valid(cert):
             logger.info("Certificate still valid")
         else:
@@ -147,5 +142,5 @@ def main():
 
 
 # to test module
-if __name__ == '__main__':
-    main()
+# if __name__ == '__main__':
+#     main()
