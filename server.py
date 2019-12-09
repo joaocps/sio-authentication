@@ -84,12 +84,6 @@ class ClientHandler(asyncio.Protocol):
 
         self.state = STATE_CONNECT
 
-    def authenticate_client(self):
-        self.generate_nonce()
-        message = {'type': 'AUTHENTICATION_CHALLENGE', 'challenge': self.one_time_nonce}
-        self._send(message)
-        return True
-
     def data_received(self, data: bytes) -> None:
         """
         Called when data is received from the client.
@@ -157,7 +151,7 @@ class ClientHandler(asyncio.Protocol):
         if mtype == 'OPEN':
             ret = self.process_open(message)
         elif mtype == 'CC':
-            ret = self.authenticate_client()
+            ret = self.authenticate_client(message)
         elif mtype == 'OTP':
             ret = self.process_OTP(message)
         elif mtype == 'DATA':
@@ -183,6 +177,20 @@ class ClientHandler(asyncio.Protocol):
 
             self.state = STATE_CLOSE
             self.transport.close()
+
+    def authenticate_client(self, message: str) -> bool:
+        if not 'token' in message:
+            logger.warning("No token provided")
+            return False
+
+        if self.otp.verify(base64.b64decode(message['token'])) is True:
+            self.one_time_nonce = secrets.token_urlsafe(32)
+            message = {'type': 'AUTHENTICATION_CHALLENGE', 'challenge': self.one_time_nonce}
+            self._send(message)
+            return True
+        else:
+            logger.warning("One Time Password not valid")
+            return False
 
     def process_authentication(self, message: str) -> bool:
 
@@ -363,14 +371,10 @@ class ClientHandler(asyncio.Protocol):
         message_b = (json.dumps(message) + '\r\n').encode()
         if self.state == STATE_CONNECT:
             message_b = self.symmetric.handshake_encrypt(message_b)
-            # sign msg and send
             self.server_cert = self.sCert.load_cert()
             self.server_cert_priv = self.sCert.load_privKey_cert()
             message_b += self.asymmetric_encrypt.sign(self.server_cert_priv, message_b)
         self.transport.write(message_b)
-
-    def generate_nonce(self):
-        self.one_time_nonce = secrets.token_urlsafe(32)
 
 
 def main():

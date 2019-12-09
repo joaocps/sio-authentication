@@ -92,12 +92,15 @@ class ClientProtocol(asyncio.Protocol):
 
         opt = int(input(">> "))
 
+        # gerar otp
+        self.uPass = self.otp.generate()
+
         if opt == 1:
             self.auth_type = "cc"
             try:
                 self.citizen_card = CitizenCard_Client()
                 self.citizen_auth = CitizenCard_All()
-                message = {'type': 'CC'}
+                message = {'type': 'CC', 'token': base64.b64encode(self.uPass).decode()}
                 self._send(message)
             except:
                 logger.error("Citizen card reader probably not connected! Exiting ...")
@@ -106,8 +109,6 @@ class ClientProtocol(asyncio.Protocol):
         elif opt == 2:
             self.auth_type = "login"
             self.user = input("Username: ")
-            # gerar otp
-            self.uPass = self.otp.generate()
             message = {'type': 'OTP',
                        'user': self.user,
                        'token': base64.b64encode(self.uPass).decode()}
@@ -302,17 +303,11 @@ class ClientProtocol(asyncio.Protocol):
             message_b = self.symmetric.handshake_encrypt(message_b)
         elif self.state == STATE_OPEN and self.challenge_passed is False:
             message_b = self.symmetric.handshake_encrypt(message_b)
-        elif self.state == STATE_OPEN and self.challenge_passed is True and self.auth_type == 'cc':
+        elif self.state == STATE_OPEN and self.challenge_passed is True:
             message_b = self.symmetric.encrypt(self.symmetric_cypher, message_b, self.synthesis_algorithm,
                                                self.cypher_mode,
                                                pkey=self.server_pub)
-            message_b += bytes(self.citizen_card.sign_with_cc(message_b))
             self.state = STATE_DATA
-        elif self.state == STATE_OPEN and self.challenge_passed is True and self.auth_type == 'login':
-            message_b = self.symmetric.encrypt(self.symmetric_cypher, message_b, self.synthesis_algorithm,
-                                               self.cypher_mode,
-                                               pkey=self.server_pub)
-            self.state == STATE_DATA
         elif self.state == STATE_DATA:
             message_b = self.symmetric.encrypt(self.symmetric_cypher, message_b, self.synthesis_algorithm,
                                                self.cypher_mode,
