@@ -72,6 +72,13 @@ class ServerCert:
             ).add_extension(
                 x509.BasicConstraints(ca=True, path_length=None)
                 , critical=True,
+            ).add_extension(
+                x509.KeyUsage(
+                    digital_signature=True, key_encipherment=True, content_commitment=False,
+                    data_encipherment=False, key_agreement=False, encipher_only=False, decipher_only=False,
+                    key_cert_sign=True, crl_sign=False
+                ),
+                critical=True
             ).sign(self.private_key,
                    hashes.SHA256(),
                    default_backend())
