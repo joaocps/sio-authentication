@@ -1,5 +1,6 @@
 import os
 import base64
+import time
 
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -9,6 +10,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives import padding, asymmetric
+from cryptography.hazmat.primitives.twofactor.totp import TOTP
 
 
 class Asymmetric(object):
@@ -352,3 +354,20 @@ class Symmetric:
         data = unpadder.update(dec)
         data += unpadder.finalize()
         return data
+
+
+class OTP:
+    def generate(self):
+        with open("otp", "rb") as f:
+            key = f.read()
+            totp = TOTP(key, 8, hashes.SHA1(), 30, backend=default_backend())
+            tval = time.time()
+            return totp.generate(tval)
+
+    def verify(self, otp_client):
+        with open("otp", "rb") as f:
+            key = f.read()
+            totp = TOTP(key, 8, hashes.SHA1(), 30, backend=default_backend())
+            tval = time.time()
+            otp_server = totp.generate(tval)
+            return otp_server == otp_client

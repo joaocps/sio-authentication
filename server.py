@@ -13,8 +13,8 @@ import getpass
 from aio_tcpserver import tcp_server
 from cryptography.hazmat.backends import default_backend
 
-from citizen_card import CitizenCard
-from default_crypto import Asymmetric, Symmetric
+from citizen_card import CitizenCard_All
+from default_crypto import Asymmetric, Symmetric, OTP
 from cryptography import x509
 import server_cert
 
@@ -46,7 +46,8 @@ class ClientHandler(asyncio.Protocol):
         self.peername = ''
         self.asymmetric_encrypt = Asymmetric()
         self.symmetric = Symmetric()
-        self.citizen_card = CitizenCard()
+        self.citizen_card = CitizenCard_All()
+        self.otp = OTP()
 
         self.sCert = server_cert.ServerCert()
 
@@ -64,6 +65,7 @@ class ClientHandler(asyncio.Protocol):
         self.server_cert_priv = None
 
         self.one_time_nonce = None
+        self.auth_type = None
 
     def connection_made(self, transport) -> None:
         """
@@ -85,7 +87,7 @@ class ClientHandler(asyncio.Protocol):
         self.transport = transport
 
         # Asks for client authentication with CC challenge/Response
-        self.authenticate_client()
+        #self.authenticate_client()
 
         self.state = STATE_CONNECT
 
@@ -93,6 +95,7 @@ class ClientHandler(asyncio.Protocol):
         self.generate_nonce()
         message = {'type': 'AUTHENTICATION_CHALLENGE', 'challenge': self.one_time_nonce}
         self._send(message)
+        return True
 
     def data_received(self, data: bytes) -> None:
         """
@@ -103,9 +106,11 @@ class ClientHandler(asyncio.Protocol):
         :return:
         """
         logger.debug('Received: {}'.format(data))
+
         if self.state == STATE_CONNECT:
             data = self.symmetric.handshake_decrypt(data)
-        elif self.state == STATE_OPEN:
+            print(data)
+        elif self.state == STATE_OPEN and self.auth_type == 'cc':
             if self.citizen_card.verify_signature(self.cert_pubkey,
                                                   data[-256:],
                                                   data[:len(data) - 256]):
@@ -113,6 +118,10 @@ class ClientHandler(asyncio.Protocol):
                 data = self.symmetric.decrypt(self.symmetric_cypher, data, self.synthesis_algorithm,
                                               self.cypher_mode,
                                               privkey=self.server_priv)
+        elif self.state == STATE_OPEN and self.auth_type == 'login':
+            data = self.symmetric.decrypt(self.symmetric_cypher, data, self.synthesis_algorithm,
+                                          self.cypher_mode,
+                                          privkey=self.server_priv)
         else:
             data = self.symmetric.decrypt(self.symmetric_cypher, data, self.synthesis_algorithm,
                                           self.cypher_mode,
@@ -155,12 +164,14 @@ class ClientHandler(asyncio.Protocol):
 
         if mtype == 'OPEN':
             ret = self.process_open(message)
+        elif mtype == 'CC':
+            ret = self.authenticate_client()
+        elif mtype == 'OTP':
+            ret = self.process_OTP(message)
         elif mtype == 'DATA':
             ret = self.process_data(message)
         elif mtype == 'AUTHENTICATION_RESPONSE':
             ret = self.process_authentication(message)
-        elif mtype == 'AUTHENTICATION_RESPONSE_FACIAL':
-            ret = self.process_authentication_facial(message)
         elif mtype == 'CLOSE':
             ret = self.process_close(message)
         else:
@@ -181,8 +192,6 @@ class ClientHandler(asyncio.Protocol):
             self.state = STATE_CLOSE
             self.transport.close()
 
-    def process_authentication_facial(self, message: str) -> bool:
-        print(message['frame'])
 
     def process_authentication(self, message: str) -> bool:
 
@@ -228,6 +237,14 @@ class ClientHandler(asyncio.Protocol):
                 self.transport.close()
 
         return True
+
+    def process_OTP(self, message: str) -> bool:
+        if self.otp.verify(base64.b64decode(message['token'])) is True:
+            self._send({'type': 'CHALLENGE OK'})
+            return True
+        else:
+            self.transport.close()
+            return False
 
     def process_open(self, message: str) -> bool:
         """

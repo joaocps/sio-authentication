@@ -12,7 +12,6 @@ from cryptography.x509.oid import *
 from cryptography.x509 import *
 from cryptography.exceptions import InvalidSignature
 
-
 logger = logging.getLogger('root')
 pkcs11 = PyKCS11.PyKCS11Lib()
 
@@ -20,7 +19,7 @@ pkcs11 = PyKCS11.PyKCS11Lib()
 pkcs11.load('C:\\Windows\\System32\\pteidpkcs11.dll' if sys.platform == 'win32' else '/usr/local/lib/libpteidpkcs11.so')
 
 
-class CitizenCard:
+class CitizenCard_Client:
     def __init__(self):
         """
         Constructor with of Citizen Card class, sessions and slots are named were
@@ -83,6 +82,12 @@ class CitizenCard:
             (PyKCS11.CKA_LABEL, 'CITIZEN AUTHENTICATION KEY')
         ])[0]
 
+    def sign_with_cc(self, content, mechanism=PyKCS11.CKM_SHA1_RSA_PKCS, param=None):
+        return self.session.sign(self.get_private_key(), content, PyKCS11.Mechanism(mechanism, param))
+
+
+class CitizenCard_All():
+
     def serialize(self, key, encoding=serialization.Encoding.PEM, **kwargs):
         if type(key) == _Certificate:
             return key.public_bytes(encoding=encoding)
@@ -94,9 +99,6 @@ class CitizenCard:
                 'format'] if 'format' in kwargs else serialization.PrivateFormat.TraditionalOpenSSL,
                                      encryption_algorithm=kwargs[
                                          'encryption_algorithm'] if 'encryption_algorithm' in kwargs else serialization.NoEncryption())
-
-    def sign_with_cc(self, content, mechanism=PyKCS11.CKM_SHA1_RSA_PKCS, param=None):
-        return self.session.sign(self.get_private_key(), content, PyKCS11.Mechanism(mechanism, param))
 
     def deserialize_x509_pem_cert_public_key(self, certificate):
         return load_pem_x509_certificate(certificate, default_backend()).public_key()

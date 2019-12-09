@@ -67,15 +67,20 @@ class ServerCert:
             ).not_valid_after(
                 datetime.datetime.utcnow() + datetime.timedelta(days=10)
             ).add_extension(
-                x509.SubjectAlternativeName([x509.DNSName(u"localhost")]),
+                x509.SubjectAlternativeName([x509.DNSName(u"serversio.io")]),
                 critical=False,
-            ).sign(self.private_key, hashes.SHA256(), default_backend())
+            ).add_extension(
+                x509.BasicConstraints(ca=True, path_length=None)
+                , critical=True,
+            ).sign(self.private_key,
+                   hashes.SHA256(),
+                   default_backend())
 
-            if not os.path.exists("certs"):
-                os.mkdir("certs")
-            with open("certs\\server.pem" if sys.platform == 'win32'
-                      else "certs/server.pem", "wb") as f:
-                f.write(cert.public_bytes(serialization.Encoding.PEM))
+        if not os.path.exists("certs"):
+            os.mkdir("certs")
+        with open("certs\\server.pem" if sys.platform == 'win32'
+                  else "certs/server.pem", "wb") as f:
+            f.write(cert.public_bytes(serialization.Encoding.PEM))
 
     """
     Test validity of server certificate
@@ -122,6 +127,10 @@ def main():
         s.cert_gen()
     else:
         cert = s.load_cert()
+        try:
+            print("CRL", cert.get_revoked_certificate_by_serial_number())
+        except AttributeError:
+            print("no crl")
         if s.is_valid(cert):
             logger.info("Certificate still valid")
         else:
@@ -129,6 +138,7 @@ def main():
             s.key_gen()
             s.cert_gen()
 
+
 # to test module
-# if __name__ == '__main__':
-#     main()
+if __name__ == '__main__':
+    main()

@@ -12,8 +12,8 @@ import sys
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 
-from default_crypto import Asymmetric, Symmetric
-from citizen_card import CitizenCard
+from default_crypto import Asymmetric, Symmetric, OTP
+from citizen_card import CitizenCard_Client, CitizenCard_All
 from facial_rec import FaceRecognition
 
 logger = logging.getLogger('root')
@@ -46,9 +46,11 @@ class ClientProtocol(asyncio.Protocol):
         self.buffer = ''  # Buffer to receive data chunks
         self.asymmetric_encrypt = Asymmetric()
         self.symmetric = Symmetric()
+        self.otp = OTP()
 
         self.challenge_passed = False
         self.citizen_card = None
+        self.citizen_auth = None
         self.face_rec = None
 
         self.symmetric_cypher = None
@@ -62,6 +64,8 @@ class ClientProtocol(asyncio.Protocol):
         self.certificate = None
 
         self.auth_type = None
+        self.user = None
+        self.uPass = None
 
     def authentication(self):
         logger.info("Starting authentication process ... ")
@@ -92,25 +96,30 @@ class ClientProtocol(asyncio.Protocol):
     def simple_menu(self):
         logger.info("Select authentication type:")
         logger.info("1 - Citizen card")
-        logger.info("2 - Facial recognition")
+        logger.info("2 - Login")
 
         opt = int(input(">>"))
 
         if opt == 1:
             self.auth_type = "cc"
             try:
-                self.citizen_card = CitizenCard()
+                self.citizen_card = CitizenCard_Client()
+                self.citizen_auth = CitizenCard_All()
+                message = {'type': 'CC'}
+                self._send(message)
             except:
                 logger.error("Citizen card reader probably not connected! Exiting ...")
                 exit(1)
             self.veritfy_card_connection()
         elif opt == 2:
-            self.auth_type = "face"
-            try:
-                self.face_rec = FaceRecognition()
-            except:
-                logger.error("Webcam probably not connected! Exiting ...")
-                exit(1)
+            self.auth_type = "login"
+            self.user = input("Username: ")
+            # gerar otp
+            self.uPass = self.otp.generate()
+            message = {'type': 'OTP',
+                       'user': self.user,
+                       'token': base64.b64encode(self.uPass).decode()}
+            self._send(message)
         else:
             logger.error("Enter correct number please.")
             self.simple_menu()
@@ -172,6 +181,9 @@ class ClientProtocol(asyncio.Protocol):
             self.asymmetric_encrypt.verify(server_cert.public_key(), data, signature)
             data = self.symmetric.handshake_decrypt(data)
             logger.debug('decrypted: {}'.format(data))
+        # else:
+        #     print("test")
+        #     data = self.symmetric.handshake_decrypt(data)
         try:
             self.buffer += data.decode()
         except:
@@ -221,7 +233,7 @@ class ClientProtocol(asyncio.Protocol):
             else:
                 logger.warning("Ignoring message from server")
             return
-        elif mtype == 'AUTHENTICATION_CHALLENGE':  # Server replied with a challenge to authenticate clients
+        elif mtype == 'AUTHENTICATION_CHALLENGE' and self.auth_type == 'cc':  # Server replied with a challenge to authenticate clients
             if self.state == STATE_OPEN and self.auth_type == "cc":
                 logger.info("Authentication process, signing challenge from server")
                 challenge_response = self.citizen_card.sign_with_cc(message["challenge"])
@@ -231,22 +243,18 @@ class ClientProtocol(asyncio.Protocol):
                     KEY_USAGE=lambda x: x.value.digital_signature)
                 self.certificate = self.certificate[0]
                 # Convert certificate to bytes
-                bytes_cert = self.citizen_card.serialize(self.certificate)
-
-                # print debug
-                # print(bytes_cert)
-                # print(x509.load_pem_x509_certificate(bytes_cert, default_backend()).public_key())
+                bytes_cert = self.citizen_auth.serialize(self.certificate)
 
                 self._send({'type': 'AUTHENTICATION_RESPONSE',
                             'challenge': message['challenge'],
                             'response': base64.b64encode(bytes(challenge_response)).decode(),
                             'certificate': base64.b64encode(bytes_cert).decode()})
 
-            if self.state == STATE_OPEN and self.auth_type == "face":
-                rgb_frame, frame = self.face_rec.take_picture()
-                # PROBLEMA NA DECIFRA COM O PADDING
-                self._send({'type': 'AUTHENTICATION_RESPONSE_FACIAL',
-                            'frame': base64.b64encode(frame).decode()})
+            # if self.state == STATE_OPEN and self.auth_type == "face":
+            #     rgb_frame, frame = self.face_rec.take_picture()
+            #     # PROBLEMA NA DECIFRA COM O PADDING
+            #     self._send({'type': 'AUTHENTICATION_RESPONSE_FACIAL',
+            #                 'frame': base64.b64encode(frame).decode()})
         elif mtype == 'CHALLENGE OK':
             message = {'type': 'OPEN',
                        'file_name': self.file_name,
@@ -257,6 +265,8 @@ class ClientProtocol(asyncio.Protocol):
                        }
             self._send(message)
             self.challenge_passed = True
+        # elif mtype == 'AUTHENTICATION_CHALLENGE' and self.auth_type == 'login':
+        #     pass
 
         elif mtype == 'ERROR':
             logger.warning("Got error from server: {}".format(message.get('data', None)))
@@ -310,12 +320,17 @@ class ClientProtocol(asyncio.Protocol):
             message_b = self.symmetric.handshake_encrypt(message_b)
         elif self.state == STATE_OPEN and self.challenge_passed is False:
             message_b = self.symmetric.handshake_encrypt(message_b)
-        elif self.state == STATE_OPEN and self.challenge_passed is True:
+        elif self.state == STATE_OPEN and self.challenge_passed is True and self.auth_type == 'cc':
             message_b = self.symmetric.encrypt(self.symmetric_cypher, message_b, self.synthesis_algorithm,
                                                self.cypher_mode,
                                                pkey=self.server_pub)
             message_b += bytes(self.citizen_card.sign_with_cc(message_b))
             self.state = STATE_DATA
+        elif self.state == STATE_OPEN and self.challenge_passed is True and self.auth_type == 'login':
+            message_b = self.symmetric.encrypt(self.symmetric_cypher, message_b, self.synthesis_algorithm,
+                                               self.cypher_mode,
+                                               pkey=self.server_pub)
+            self.state == STATE_DATA
         elif self.state == STATE_DATA:
             message_b = self.symmetric.encrypt(self.symmetric_cypher, message_b, self.synthesis_algorithm,
                                                self.cypher_mode,
