@@ -69,9 +69,22 @@ class ClientProtocol(asyncio.Protocol):
     def handshake(self):
         self._private_key, self._public_key = self.asymmetric_encrypt.generate_rsa_keys()
 
-        symmetric_cypher = int(input("Symmetric Cypher ( aes128(1), 3des(2) or chacha20(3) ): "))
-        cypher_mode = int(input("Cypher mode ( cbc(1) or ctr(2) ): "))
-        synthesis_algorithm = int(input("Synthesis Algorithm ( sha-256(1) or sha-512(2) )"))
+        logger.info("Select algorithm, mode and integrity control for negotiation")
+        logger.info("Select symmetric cipher algorithm:")
+        logger.info("1 - AES128")
+        logger.info("2 - 3DES")
+        logger.info("3 - CHACHA20")
+        symmetric_cypher = int(input(">> "))
+
+        logger.info("Select cipher mode:")
+        logger.info("1 - CBC")
+        logger.info("2 - CTR")
+        cypher_mode = int(input(">> "))
+
+        logger.info("Select synthesis algorithm:")
+        logger.info("1 - SHA-256")
+        logger.info("2 - SHA-512")
+        synthesis_algorithm = int(input(">> "))
 
         if symmetric_cypher < 1 or symmetric_cypher > 3:
             logger.error("Symmetric Cypher not allowed, try again!")
@@ -101,14 +114,15 @@ class ClientProtocol(asyncio.Protocol):
                 self.citizen_card = CitizenCard_Client()
                 self.citizen_auth = CitizenCard_All()
                 message = {'type': 'CC', 'token': base64.b64encode(self.uPass).decode()}
-                self._send(message)
             except:
                 logger.error("Citizen card reader probably not connected! Exiting ...")
                 exit(1)
             self.veritfy_card_connection()
+            self._send(message)
         elif opt == 2:
             self.auth_type = "login"
-            self.user = input("Username: ")
+            logger.info("Enter your username:")
+            self.user = input(">> ")
             message = {'type': 'OTP',
                        'user': self.user,
                        'token': base64.b64encode(self.uPass).decode()}
@@ -121,7 +135,7 @@ class ClientProtocol(asyncio.Protocol):
         try:
             logger.info(self.citizen_card.get_name())
         except Exception:
-            logger.error("CITIZEN CARD PROBABLY NOT CONNECTED")
+            logger.error("Citizen card probably not connected! Exiting ...")
             exit(1)
 
     def connection_made(self, transport) -> None:
