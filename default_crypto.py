@@ -1,6 +1,7 @@
 import os
 import base64
 import time
+import datetime
 
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -11,6 +12,8 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives import padding, asymmetric
 from cryptography.hazmat.primitives.twofactor.totp import TOTP
+from cryptography.x509 import ExtensionOID
+from cryptography.exceptions import InvalidSignature
 
 
 class Asymmetric(object):
@@ -105,16 +108,25 @@ class Asymmetric(object):
     Valid just for server certificate
     """
 
-    def verify(self, pubkey, message, signature):
-        return pubkey.verify(
-            signature,
-            message,
-            asymmetric.padding.PSS(
-                mgf=asymmetric.padding.MGF1(hashes.SHA256()),
-                salt_length=asymmetric.padding.PSS.MAX_LENGTH
-            ),
-            hashes.SHA256()
-        )
+    def verify(self, cert, message, signature):
+        ca = cert.extensions.get_extension_for_oid(ExtensionOID.BASIC_CONSTRAINTS)
+        if cert.not_valid_before < datetime.datetime.utcnow() < cert.not_valid_after and ca.value.ca:
+            try:
+                cert.public_key().verify(cert.signature, cert.tbs_certificate_bytes, asymmetric.padding.PKCS1v15(),
+                                         cert.signature_hash_algorithm)
+            except InvalidSignature:
+                return False
+            return cert.public_key().verify(
+                signature,
+                message,
+                asymmetric.padding.PSS(
+                    mgf=asymmetric.padding.MGF1(hashes.SHA256()),
+                    salt_length=asymmetric.padding.PSS.MAX_LENGTH
+                ),
+                hashes.SHA256()
+            )
+        else:
+            return False
 
 
 class Symmetric:

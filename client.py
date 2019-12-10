@@ -185,7 +185,7 @@ class ClientProtocol(asyncio.Protocol):
             f = open("certs\\server.pem" if sys.platform == 'win32'
                      else "certs/server.pem", "rb")
             server_cert = x509.load_pem_x509_certificate(f.read(), default_backend())
-            self.asymmetric_encrypt.verify(server_cert.public_key(), data, signature)
+            self.asymmetric_encrypt.verify(server_cert, data, signature)
             data = self.symmetric.handshake_decrypt(data)
             logger.debug('decrypted: {}'.format(data))
 

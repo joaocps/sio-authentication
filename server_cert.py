@@ -1,5 +1,5 @@
 from cryptography import x509
-from cryptography.x509.oid import NameOID
+from cryptography.x509.oid import NameOID, ExtensionOID
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
@@ -94,7 +94,8 @@ class ServerCert:
     """
 
     def is_valid(self, cert):
-        if cert.not_valid_before < datetime.datetime.utcnow() < cert.not_valid_after:
+        ca = cert.extensions.get_extension_for_oid(ExtensionOID.BASIC_CONSTRAINTS)
+        if cert.not_valid_before < datetime.datetime.utcnow() < cert.not_valid_after and ca.value.ca:
             try:
                 cert.public_key().verify(cert.signature, cert.tbs_certificate_bytes, padding.PKCS1v15(),
                                          cert.signature_hash_algorithm)
