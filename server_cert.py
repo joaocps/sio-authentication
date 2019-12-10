@@ -133,6 +133,7 @@ def main():
         s.cert_gen()
     else:
         cert = s.load_cert()
+
         if s.is_valid(cert):
             logger.info("Certificate still valid")
         else:

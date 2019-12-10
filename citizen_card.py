@@ -2,6 +2,7 @@ import sys
 import PyKCS11
 import logging
 import datetime
+import urllib.request
 
 from cryptography.hazmat.backends.openssl.rsa import _RSAPublicKey
 from cryptography.hazmat.backends.openssl.x509 import _Certificate
@@ -48,7 +49,6 @@ class CitizenCard_Client:
         certificates = [load_der_x509_certificate(certificate, self.backend) for certificate in self.get_certificates()]
         if 'KEY_USAGE' not in kwargs:
             kwargs['KEY_USAGE'] = lambda ku: ku.value.digital_signature and ku.value.key_agreement
-            print(kwargs['KEY_USAGE'])
         for key, value in kwargs.items():
             if key in dir(ExtensionOID):
                 certificates = [certificate for certificate in certificates if
@@ -111,7 +111,7 @@ class CitizenCard_All():
         return True
 
     def verify_cert_cc(self, cert):
-        if cert.not_valid_before < datetime.datetime.utcnow() < cert.not_valid_after:
+        if cert.not_valid_before < datetime.datetime.utcnow() < cert.not_valid_after and self.crl_check(cert) is False:
             cn = cert.issuer.get_attributes_for_oid(NameOID.COMMON_NAME)
             issuerid = cn[0].value[-4:]
             c = open(
@@ -120,7 +120,7 @@ class CitizenCard_All():
                 else "certs/cc/EC de Aute ticacao do Cartao de Cidadao " + issuerid + ".pem",
                 "rb")
             c = load_pem_x509_certificate(c.read(), default_backend())
-            if c.not_valid_before < datetime.datetime.utcnow() < c.not_valid_after:
+            if c.not_valid_before < datetime.datetime.utcnow() < c.not_valid_after and self.crl_check(c) is False:
                 try:
                     c.public_key().verify(
                         cert.signature,
@@ -132,8 +132,18 @@ class CitizenCard_All():
                     logger.error("Could not validate Citizen Card certificate")
                     return False
             else:
-                logger.error("Sub CA certificate expired")
-                return False
+                logger.info("Checking if last entity is CA")
+                ca = cert.extensions.get_extension_for_oid(ExtensionOID.BASIC_CONSTRAINTS)
+                if ca.value.ca is True:
+                    logger.info("Entity is CA")
+                    logger.info("Validation chain complete")
+                    return True
+                elif self.crl_check(c):
+                    logger.error("Sub CA certificate revoked")
+                    return False
+                else:
+                    logger.error("Sub CA certificate expired")
+                    return False
         else:
             logger.error("Client certificate expired")
             return False
@@ -149,7 +159,7 @@ class CitizenCard_All():
                 else "certs/cc/Cartao de Cidadao " + issuerid + ".pem",
                 "rb")
             c = load_pem_x509_certificate(c.read(), default_backend())
-            if c.not_valid_before < datetime.datetime.utcnow() < c.not_valid_after:
+            if c.not_valid_before < datetime.datetime.utcnow() < c.not_valid_after and self.crl_check(c) is False:
                 try:
                     c.public_key().verify(
                         cert.signature,
@@ -161,11 +171,22 @@ class CitizenCard_All():
                     logger.error("Could not validate Sub CA certificate")
                     return False
             else:
-                logger.error("Sub CA 2 certificate expired")
-                return False
+                logger.info("Checking if last entity is CA")
+                ca = cert.extensions.get_extension_for_oid(ExtensionOID.BASIC_CONSTRAINTS)
+                if ca.value.ca is True:
+                    logger.info("Entity is CA")
+                    logger.info("Validation chain complete")
+                    return True
+                elif self.crl_check(c):
+                    logger.error("Sub CA 2 certificate revoked")
+                    return False
+                else:
+                    logger.error("Sub CA 2 certificate expired")
+                    return False
         else:
             logger.error("Sub CA certificate expired")
             return False
+
         return self.verify_cert_rootca(c)
 
     def verify_cert_rootca(self, cert):
@@ -176,7 +197,7 @@ class CitizenCard_All():
                 else "certs/cc/ecraizestado.pem",
                 "rb")
             c = load_pem_x509_certificate(c.read(), default_backend())
-            if c.not_valid_before < datetime.datetime.utcnow() < c.not_valid_after:
+            if c.not_valid_before < datetime.datetime.utcnow() < c.not_valid_after and self.crl_check(c) is False:
                 try:
                     c.public_key().verify(
                         cert.signature,
@@ -188,10 +209,35 @@ class CitizenCard_All():
                     logger.error("Could not validate Sub CA certificate")
                     return False
             else:
-                logger.error("Root CA certificate expired")
-                return False
+                logger.info("Checking if last entity is CA")
+                ca = cert.extensions.get_extension_for_oid(ExtensionOID.BASIC_CONSTRAINTS)
+                if ca.value.ca is True:
+                    logger.info("Entity is CA")
+                    logger.info("Validation chain complete")
+                    return True
+                elif self.crl_check(c):
+                    logger.error("Root CA certificate revoked")
+                    return False
+                else:
+                    logger.error("Root CA certificate expired")
+                    return False
         else:
             logger.error("Sub CA 2 certificate expired")
             return False
         logger.info("Validation chain complete")
         return True
+
+    def crl_check(self, cert):
+        crl_ext = cert.extensions.get_extension_for_oid(ExtensionOID.CRL_DISTRIBUTION_POINTS)
+        url = crl_ext.value[0].full_name[0].value
+        data = urllib.request.urlopen(url)
+        crl = b''
+        for line in data:
+            crl += line
+        c = load_der_x509_crl(crl, default_backend())
+        if c.get_revoked_certificate_by_serial_number(cert.serial_number) is None:
+            return False
+        else:
+            test = c.get_revoked_certificate_by_serial_number(cert.serial_number)
+            logger.error("Certificate revoked at {}".format(test.revocation_date))
+            return True
