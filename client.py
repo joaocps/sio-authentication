@@ -98,6 +98,10 @@ class ClientProtocol(asyncio.Protocol):
         return symmetric_cypher, cypher_mode, synthesis_algorithm
 
     def simple_menu(self):
+        """
+        Let client select the type of authentication to use
+        and triggers its process
+        """
         logger.info("Select authentication type:")
         logger.info("1 - Citizen card")
         logger.info("2 - Login")

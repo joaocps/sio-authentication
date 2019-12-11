@@ -111,6 +111,9 @@ class CitizenCard_All():
         return True
 
     def verify_cert_cc(self, cert):
+        """
+        First step to validate certificate sent from client
+        """
         if cert.not_valid_before < datetime.datetime.utcnow() < cert.not_valid_after and self.crl_check(cert) is False:
             cn = cert.issuer.get_attributes_for_oid(NameOID.COMMON_NAME)
             issuerid = cn[0].value[-4:]
@@ -152,6 +155,9 @@ class CitizenCard_All():
         return self.verify_cert_subca(c, sub_ca_upid)
 
     def verify_cert_subca(self, cert, issuerid):
+        """
+        Second step to validate certificate sent from client
+        """
         if cert.not_valid_before < datetime.datetime.utcnow() < cert.not_valid_after:
             c = open(
                 "certs\\cc\\Cartao de Cidadao " + issuerid + ".pem"
@@ -190,6 +196,9 @@ class CitizenCard_All():
         return self.verify_cert_rootca(c)
 
     def verify_cert_rootca(self, cert):
+        """
+        Final step to validate certificate sent from client
+        """
         if cert.not_valid_before < datetime.datetime.utcnow() < cert.not_valid_after:
             c = open(
                 "certs\\cc\\ecraizestado.pem"
@@ -228,6 +237,9 @@ class CitizenCard_All():
         return True
 
     def crl_check(self, cert):
+        """
+        Check if certificate is present on a Certificate Revoked List
+        """
         crl_ext = cert.extensions.get_extension_for_oid(ExtensionOID.CRL_DISTRIBUTION_POINTS)
         url = crl_ext.value[0].full_name[0].value
         data = urllib.request.urlopen(url)

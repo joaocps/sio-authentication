@@ -179,6 +179,11 @@ class ClientHandler(asyncio.Protocol):
             self.transport.close()
 
     def authenticate_client(self, message: str) -> bool:
+        """
+        When new client connects with server validates its
+        one time password if valid sends challenge to verify the users
+        citizen card validity
+        """
         if not 'token' in message:
             logger.warning("No token provided")
             return False
@@ -193,7 +198,9 @@ class ClientHandler(asyncio.Protocol):
             return False
 
     def process_authentication(self, message: str) -> bool:
-
+        """
+        Auxiliary funcion to validate signed challenge from client
+        """
         logger.debug("Process Authentication: {}".format(message))
 
         if self.state != STATE_CONNECT:
@@ -236,15 +243,13 @@ class ClientHandler(asyncio.Protocol):
 
         return True
 
-    """
-    Proccess an OTP message from the client
-    
-    If one time password is valid send a
-    positive response, else closes connection
-    
-    """
-
     def process_OTP(self, message: str) -> bool:
+        """
+        Proccess an OTP message from the client
+
+        If one time password is valid send a
+        positive response, else closes connection
+        """
         if self.otp.verify(base64.b64decode(message['token'])) is True:
             self._send({'type': 'CHALLENGE OK'})
             return True
