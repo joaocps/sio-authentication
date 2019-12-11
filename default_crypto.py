@@ -2,6 +2,7 @@ import os
 import base64
 import time
 import datetime
+import logging
 
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -14,6 +15,8 @@ from cryptography.hazmat.primitives import padding, asymmetric
 from cryptography.hazmat.primitives.twofactor.totp import TOTP
 from cryptography.x509 import ExtensionOID
 from cryptography.exceptions import InvalidSignature
+
+logger = logging.getLogger('root')
 
 
 class Asymmetric(object):
@@ -115,18 +118,24 @@ class Asymmetric(object):
                 cert.public_key().verify(cert.signature, cert.tbs_certificate_bytes, asymmetric.padding.PKCS1v15(),
                                          cert.signature_hash_algorithm)
             except InvalidSignature:
+                logger.error("Invalid Server certificate")
                 return False
-            return cert.public_key().verify(
-                signature,
-                message,
-                asymmetric.padding.PSS(
-                    mgf=asymmetric.padding.MGF1(hashes.SHA256()),
-                    salt_length=asymmetric.padding.PSS.MAX_LENGTH
-                ),
-                hashes.SHA256()
-            )
+            try:
+                cert.public_key().verify(
+                    signature,
+                    message,
+                    asymmetric.padding.PSS(
+                        mgf=asymmetric.padding.MGF1(hashes.SHA256()),
+                        salt_length=asymmetric.padding.PSS.MAX_LENGTH
+                    ),
+                    hashes.SHA256()
+                )
+            except InvalidSignature:
+                logger.error("Invalid message signature")
+                return False
         else:
             return False
+        return True
 
 
 class Symmetric:

@@ -1,5 +1,4 @@
 import asyncio
-import getpass
 import json
 import base64
 import argparse
@@ -185,7 +184,9 @@ class ClientProtocol(asyncio.Protocol):
             f = open("certs\\server.pem" if sys.platform == 'win32'
                      else "certs/server.pem", "rb")
             server_cert = x509.load_pem_x509_certificate(f.read(), default_backend())
-            self.asymmetric_encrypt.verify(server_cert, data, signature)
+            if not self.asymmetric_encrypt.verify(server_cert, data, signature):
+                self.transport.close()
+                self.loop.stop()
             data = self.symmetric.handshake_decrypt(data)
             logger.debug('decrypted: {}'.format(data))
 
