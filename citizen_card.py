@@ -251,5 +251,6 @@ class CitizenCard_All():
             return False
         else:
             test = c.get_revoked_certificate_by_serial_number(cert.serial_number)
-            logger.error("Certificate revoked at {}".format(test.revocation_date))
+            cn = cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)
+            logger.error("Certificate {} revoked at {}".format(cn[0].value, test.revocation_date))
             return True
