@@ -3,6 +3,7 @@ import PyKCS11
 import logging
 import datetime
 import urllib.request
+import urllib.error
 
 from cryptography.hazmat.backends.openssl.rsa import _RSAPublicKey
 from cryptography.hazmat.backends.openssl.x509 import _Certificate
@@ -242,7 +243,11 @@ class CitizenCard_All():
         """
         crl_ext = cert.extensions.get_extension_for_oid(ExtensionOID.CRL_DISTRIBUTION_POINTS)
         url = crl_ext.value[0].full_name[0].value
-        data = urllib.request.urlopen(url)
+        try:
+            data = urllib.request.urlopen(url)
+        except urllib.error.HTTPError:
+            # If Url doesnt exist, exemple newer Citizen Cards that have no CRL available
+            return False
         crl = b''
         for line in data:
             crl += line
