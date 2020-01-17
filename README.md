@@ -1,4 +1,4 @@
-# Authentication project of Information and Organizational Security.
+# Authentication and access control project of Information and Organizational Security.
 
 ## Resume
 The project consists of the design and implementation of a protocol that allows secure communication between two points, with mutual authentication. 
